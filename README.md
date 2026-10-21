@@ -21,6 +21,15 @@ npm test           # 규칙 단위 테스트
 npm run build:web  # 배포용 웹 빌드 (dist/)
 ```
 
+## 웹 배포 (GitHub Pages)
+
+`main`에 올리면 GitHub Actions(`.github/workflows/deploy-pages.yml`)가 웹으로 빌드해서 Pages에 배포합니다.
+
+- 처음 한 번: 저장소 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 바꿉니다.
+  ("Deploy from a branch"로 두면 빌드 전 원본 파일이 올라가 README만 보입니다.)
+- 주소: `https://아이디.github.io/저장소이름/` — 하위 경로는 저장소 이름으로 자동 설정됩니다(`WEB_BASE_PATH`).
+- 진행 상황은 저장소의 **Actions** 탭에서 확인합니다.
+
 ## 현재 구현 (로컬 단계)
 
 서버·외부 계정 없이 한 기기 안에서 모두 동작합니다. 데이터는 브라우저 저장소에 저장됩니다.

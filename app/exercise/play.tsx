@@ -7,6 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { BottomBar, FlowHeader } from '@/components/Legacy';
 import VideoSurface from '@/components/VideoSurface';
+import { publicPath } from '@/lib/assets';
 import { exerciseById } from '@/data/content';
 import { appConfig } from '@/lib/config';
 import { useStore } from '@/store/AppStore';
@@ -219,7 +220,7 @@ export default function PlayScreen() {
         >
           {!failed ? (
             <VideoSurface
-              src={exercise.video}
+              src={publicPath(exercise.video)}
               playing={!paused}
               onActiveChange={setVideoActive}
               onEnded={advance}
