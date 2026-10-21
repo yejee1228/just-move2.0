@@ -35,7 +35,13 @@ jobs:
 
       - name: Build web
         # Pages 주소가 https://아이디.github.io/저장소이름/ 이므로 기준 경로를 저장소 이름으로 맞춘다
-        run: npx expo export --platform web
+        # 실패하면 로그 끝부분을 알림(annotation)으로 남긴다 (로그인 없이도 실행 요약에서 보임)
+        run: |
+          set -o pipefail
+          if ! npx expo export --platform web 2>&1 | tee build.log; then
+            echo "::error title=expo export 실패::$(tail -n 40 build.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          fi
         env:
           WEB_BASE_PATH: /${{ github.event.repository.name }}
           CI: 1
