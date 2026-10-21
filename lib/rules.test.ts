@@ -215,6 +215,11 @@ describe('알림', () => {
     expect(reminderDueKey(base, at(9), 0, 5)).toBe('2026-10-20T09');
     expect(reminderDueKey(base, at(20), 0, 5)).toBe('2026-10-20T20');
   });
+  it('앱을 중간에 열었을 때는 보내지 않는다 (정각 직후 2분만)', () => {
+    expect(reminderDueKey(base, at(10) + 60_000, 0, 5)).toBe('2026-10-20T10');
+    expect(reminderDueKey(base, at(10) + 2 * 60_000, 0, 5)).toBeNull();
+    expect(reminderDueKey(base, at(10) + 30 * 60_000, 0, 5)).toBeNull();
+  });
   it('같은 시각에는 한 번만', () => {
     const s = { ...base, reminder: { ...base.reminder, lastFiredKey: '2026-10-20T10' } };
     expect(reminderDueKey(s, at(10), 0, 5)).toBeNull();
