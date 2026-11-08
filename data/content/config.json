@@ -5,6 +5,10 @@
   "dropDailyLimit": 5,
   "dropsPerHarvest": 7,
   "videoSec": 60,
+  "playlistMax": 10,
+  "adGapMin": 2,
+  "adGapMax": 3,
+  "adSkipSec": 5,
   "completeRatio": 0.8,
   "notificationDefault": { "enabled": true, "startHour": 9, "endHour": 20 }
 }

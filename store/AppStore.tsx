@@ -7,45 +7,72 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { EXERCISES, TIP_CARDS, WELCOME_MESSAGES, exerciseById } from '@/data/content';
+import {
+  TIP_CARDS,
+  WELCOME_MESSAGES,
+  allExercises,
+  exerciseById,
+  mergeCatalog,
+  setCustomExercises,
+  videoSecOf,
+} from '@/data/content';
+import { deleteMedia, putMedia } from '@/data/media';
 import { localRepository, type Repository, type UserData } from '@/data/repository';
 import { appConfig } from '@/lib/config';
 import { dateKey, todayKey } from '@/lib/date';
 import { addDrops, waterCrop as waterCropRule, type WaterResult } from '@/lib/farm';
 import { pickMessage, relationOf, restBucketOf, welcomeRestDays, type WelcomeMessage } from '@/lib/messages';
-import { buildPlaylist, pickReplacement, type RecommendOptions } from '@/lib/recommend';
+import { isAdLive } from '@/lib/adReport';
+import { planAds } from '@/lib/ads';
+import { continuePlaylist, playlistFrom, rankVideos } from '@/lib/recommend';
 import { creditedMinutes, dropsToGrant, isItemCompleted } from '@/lib/session';
 import { dropsOnDate, movedDateKeys } from '@/lib/stats';
 import { sessionPoints } from '@/lib/rewards';
 import type {
+  AdVideo,
   AppSettings,
   Exercise,
   InProgress,
-  Perceived,
   Posture,
-  ProofPhoto,
+  Perceived,
   Schedule,
   Session,
   SessionItem,
+  VideoStat,
 } from '@/lib/types';
-
-type Planned = 1 | 3 | 5;
 
 interface StoreValue extends UserData {
   ready: boolean;
-  /** firstExerciseId: 예약에서 시작할 때 첫 동작으로 고정할 운동 */
-  startSession(posture: Posture, plannedMin: Planned, firstExerciseId?: string): InProgress;
+  /** 기본 운동 목록 + 관리자가 올린 영상 */
+  catalog: Exercise[];
+  /**
+   * 고른 영상부터 재생을 시작한다. 뒤에는 같은 바둑판(posture)의 추천 영상이 이어진다 (최대 playlistMax개).
+   * posture를 주지 않으면 고른 영상의 자세 (예약에서 시작할 때).
+   */
+  startSession(exerciseId: string, posture?: Posture | 'all'): InProgress | null;
+  /** 체크박스로 고른 영상이나 지난 기록의 루틴을 그 순서대로 연결 재생한다 */
+  startSelected(exerciseIds: string[], scope?: Posture | 'all'): InProgress | null;
+  /** [계속 운동하기]: 방금 본 영상을 뺀 추천 영상으로 새 운동을 시작한다 */
+  continueAfter(sessionId: string): InProgress | null;
+  recordView(exerciseId: string): void;
+  toggleLike(exerciseId: string): void;
+  recordAdView(adId: string): void;
+  recordAdClick(adId: string): void;
+  /** 관리자: 운동 영상 저장 (파일이 있으면 교체) */
+  saveVideo(video: Exercise, files: { video?: Blob; thumb?: Blob }): Promise<void>;
+  /** 관리자: 올린 영상 삭제. 기본 영상을 수정한 것이면 기본값으로 되돌린다 */
+  deleteVideo(id: string): Promise<void>;
+  saveAd(ad: AdVideo, file?: Blob): Promise<void>;
+  deleteAd(id: string): Promise<void>;
   /** 현재 재생 상태를 저장 (재생 초는 slotPlayedSec에 누적된 값) */
   saveProgress(next: InProgress): void;
-  /** '다음 동작': 현재 슬롯을 다른 동작으로 교체 */
-  replaceCurrentSlot(current: InProgress): InProgress;
   finishSession(current: InProgress): Session;
+  /** 완료 화면의 체감 난이도 (같은 값을 다시 누르면 취소) */
   setPerceived(sessionId: string, perceived: Perceived | undefined): void;
-  /** 완료 화면 선택 입력 (동작별 실제 횟수, 메모) */
-  setSessionExtras(sessionId: string, extras: { counts?: Record<string, number>; memo?: string }): void;
+  /** 마지막으로 고른 자세 (홈 자세 버튼·바둑판 자세 필터) */
+  setLastPosture(posture: Posture | null): void;
   addSchedule(schedule: Omit<Schedule, 'id' | 'createdAt' | 'status'>): Schedule;
   updateSchedule(id: string, patch: Partial<Schedule>): void;
-  addPhoto(photo: Omit<ProofPhoto, 'id'>): ProofPhoto;
   waterCrop(): WaterResult;
   /** 오늘 보여 줄 환영 문구. 조건이 아니면 null */
   getWelcome(): WelcomeMessage | null;
@@ -77,8 +104,12 @@ const empty: UserData = {
   history: { welcome: [], notification: [] },
   inProgress: null,
   schedules: [],
-  photos: [],
+  videoStats: {},
+  customVideos: [],
+  ads: [],
 };
+
+const emptyStat: VideoStat = { picks: 0, plays: 0, completes: 0, quits: 0 };
 
 function newId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -109,8 +140,17 @@ export function AppStoreProvider({
           exerciseId: id,
           playedSec: Math.round(cur.slotPlayedSec[i] ?? 0),
           skipped: false,
+          videoSec: cur.slotVideoSec?.[i] ?? videoSecOf(exerciseById(id)),
         })),
       ].filter((it) => it.skipped || it.playedSec > 0);
+      // 끝까지 봤는지: 영상마다 길이가 다르므로(1분 이상) 그 영상 길이의 일정 비율 이상 재생
+      const completed = (it: SessionItem) =>
+        isItemCompleted(
+          it.playedSec,
+          it.skipped,
+          it.videoSec ?? videoSecOf(exerciseById(it.exerciseId)),
+          appConfig.completeRatio,
+        );
 
       const actualSec = Math.round(items.reduce((s, it) => s + it.playedSec, 0));
       const credited = creditedMinutes(actualSec);
@@ -122,7 +162,7 @@ export function AppStoreProvider({
         startedAt: cur.startedAt,
         localDate: cur.localDate,
         posture: cur.posture,
-        plannedMin: cur.plannedMin,
+        scope: cur.scope,
         actualSec,
         creditedMin: credited,
         dropsEarned: drops,
@@ -130,7 +170,7 @@ export function AppStoreProvider({
         points: sessionPoints(
           items,
           credited,
-          (it) => isItemCompleted(it.playedSec, it.skipped, appConfig.videoSec, appConfig.completeRatio),
+          completed,
           exerciseById,
         ),
       };
@@ -140,10 +180,27 @@ export function AppStoreProvider({
       void repository.saveSessions(sessions);
       void repository.saveInProgress(null);
 
+      // 영상별 시청 기록: 끝까지 봤는지, 중간에 넘겼는지
+      const videoStats = { ...ref.current.videoStats };
+      for (const it of items) {
+        if (it.playedSec <= 0) continue;
+        const prev = videoStats[it.exerciseId] ?? emptyStat;
+        const done = completed(it);
+        videoStats[it.exerciseId] = {
+          ...prev,
+          plays: prev.plays + 1,
+          completes: prev.completes + (done ? 1 : 0),
+          quits: prev.quits + (done ? 0 : 1),
+          lastPlayedAt: session.startedAt,
+        };
+      }
+      commit({ videoStats });
+      void repository.saveVideoStats(videoStats);
+
       if (credited >= 1) {
         const progress = { ...ref.current.progress };
         for (const it of items) {
-          if (isItemCompleted(it.playedSec, it.skipped, appConfig.videoSec, appConfig.completeRatio)) {
+          if (completed(it)) {
             progress[it.exerciseId] = (progress[it.exerciseId] ?? 0) + 1;
           }
         }
@@ -165,6 +222,7 @@ export function AppStoreProvider({
     (async () => {
       const loaded = await repository.load();
       if (!alive) return;
+      setCustomExercises(loaded.customVideos);
       ref.current = loaded;
       setData(loaded);
       // 어제 이전에 멈춘 세션은 이어하지 않은 것으로 보고 확정
@@ -178,57 +236,169 @@ export function AppStoreProvider({
     };
   }, [repository, finalize]);
 
-  const recommendBase = useCallback(
-    (posture: Posture, slots: Planned): RecommendOptions => {
-      const today = todayKey();
-      const skippedToday = ref.current.sessions
-        .filter((s) => s.localDate === today)
-        .flatMap((s) => s.items.filter((it) => it.skipped).map((it) => it.exerciseId));
-      return {
-        posture,
-        slots,
-        exercises: EXERCISES,
-        progress: ref.current.progress,
-        skippedToday,
-        masteredThreshold: appConfig.masteredThreshold,
-        newRatio: appConfig.newRatio,
-        masteredChance: appConfig.masteredChance,
-      };
-    },
-    [],
-  );
-
-  const startSession = useCallback(
-    (posture: Posture, plannedMin: Planned, firstExerciseId?: string): InProgress => {
-      if (ref.current.inProgress) finalize(ref.current.inProgress);
-      let list = buildPlaylist(recommendBase(posture, plannedMin));
-      const first = firstExerciseId ? exerciseById(firstExerciseId) : undefined;
-      if (first) {
-        // 예약한 운동을 첫 동작으로 고정하고, 나머지 칸은 추천에서 겹치지 않게 채운다
-        const rest = list.filter((e) => e.id !== first.id);
-        list = [first, ...rest].slice(0, plannedMin);
-        while (list.length < plannedMin) list.push(first);
-      }
+  /** 재생 목록으로 새 운동을 시작한다. picked: 사용자가 직접 고른 영상 ('자주 찾은 영상') */
+  const begin = useCallback(
+    (playlist: string[], scope: Posture | 'all', picked: string[]): InProgress => {
       const now = Date.now();
+      const posture = scope !== 'all' ? scope : (exerciseById(playlist[0])?.postures[0] ?? 'sitting');
+      const activeAds = ref.current.ads.filter((a) => isAdLive(a, dateKey(now))).map((a) => a.id);
       const cur: InProgress = {
         id: newId(),
         startedAt: new Date(now).toISOString(),
         localDate: dateKey(now),
         posture,
-        plannedMin,
-        playlist: list.map((e) => e.id),
+        scope,
+        adPlan: planAds(playlist.length, activeAds, appConfig.adGapMin, appConfig.adGapMax),
+        playlist,
         slotIndex: 0,
-        slotPlayedSec: list.map(() => 0),
+        slotPlayedSec: playlist.map(() => 0),
         extraItems: [],
         updatedAt: new Date(now).toISOString(),
       };
-      const settings = { ...ref.current.settings, lastPosture: posture };
-      commit({ inProgress: cur, settings });
+      const videoStats = { ...ref.current.videoStats };
+      for (const id of picked) {
+        const prev = videoStats[id] ?? emptyStat;
+        videoStats[id] = { ...prev, picks: prev.picks + 1 };
+      }
+      commit({ inProgress: cur, videoStats });
       void repository.saveInProgress(cur);
-      void repository.saveSettings(settings);
+      void repository.saveVideoStats(videoStats);
       return cur;
     },
-    [commit, finalize, recommendBase, repository],
+    [commit, repository],
+  );
+
+  const startSession = useCallback(
+    (exerciseId: string, posture?: Posture | 'all'): InProgress | null => {
+      const first = exerciseById(exerciseId);
+      if (!first) return null;
+      if (ref.current.inProgress) finalize(ref.current.inProgress);
+      const scope = posture ?? first.postures[0];
+      const ranked = rankVideos(allExercises(), scope, ref.current.videoStats);
+      return begin(playlistFrom(ranked, first.id, appConfig.playlistMax), scope, [first.id]);
+    },
+    [begin, finalize],
+  );
+
+  const startSelected = useCallback(
+    (exerciseIds: string[], scope?: Posture | 'all'): InProgress | null => {
+      const ids = exerciseIds.filter((id) => exerciseById(id)).slice(0, appConfig.playlistMax);
+      if (ids.length === 0) return null;
+      if (ref.current.inProgress) finalize(ref.current.inProgress);
+      return begin(ids, scope ?? ref.current.settings.lastPosture ?? 'all', ids);
+    },
+    [begin, finalize],
+  );
+
+  const continueAfter = useCallback(
+    (sessionId: string): InProgress | null => {
+      const done = ref.current.sessions.find((s) => s.id === sessionId);
+      if (!done) return null;
+      if (ref.current.inProgress) finalize(ref.current.inProgress);
+      const scope = done.scope ?? done.posture;
+      const ranked = rankVideos(allExercises(), scope, ref.current.videoStats);
+      const playlist = continuePlaylist(ranked, done.items.map((it) => it.exerciseId), appConfig.playlistMax);
+      return playlist.length > 0 ? begin(playlist, scope, []) : null;
+    },
+    [begin, finalize],
+  );
+
+  const patchStat = useCallback(
+    (id: string, change: (s: VideoStat) => VideoStat) => {
+      const videoStats = { ...ref.current.videoStats, [id]: change(ref.current.videoStats[id] ?? emptyStat) };
+      commit({ videoStats });
+      void repository.saveVideoStats(videoStats);
+    },
+    [commit, repository],
+  );
+
+  const recordView = useCallback(
+    (id: string) => patchStat(id, (s) => ({ ...s, views: (s.views ?? 0) + 1 })),
+    [patchStat],
+  );
+
+  const toggleLike = useCallback(
+    (id: string) => patchStat(id, (s) => ({ ...s, liked: !s.liked })),
+    [patchStat],
+  );
+
+  const commitAds = useCallback(
+    (ads: AdVideo[]) => {
+      commit({ ads });
+      void repository.saveAds(ads);
+    },
+    [commit, repository],
+  );
+
+  /** 광고 결과를 오늘 날짜에 더한다 */
+  const bumpAd = useCallback(
+    (adId: string, field: 'views' | 'clicks') => {
+      const today = todayKey();
+      commitAds(
+        ref.current.ads.map((a) => {
+          if (a.id !== adId) return a;
+          const day = a.stats[today] ?? { views: 0, clicks: 0 };
+          return { ...a, stats: { ...a.stats, [today]: { ...day, [field]: day[field] + 1 } } };
+        }),
+      );
+    },
+    [commitAds],
+  );
+
+  const recordAdView = useCallback((adId: string) => bumpAd(adId, 'views'), [bumpAd]);
+  const recordAdClick = useCallback((adId: string) => bumpAd(adId, 'clicks'), [bumpAd]);
+
+  const commitVideos = useCallback(
+    (customVideos: Exercise[]) => {
+      setCustomExercises(customVideos);
+      commit({ customVideos });
+      void repository.saveCustomVideos(customVideos);
+    },
+    [commit, repository],
+  );
+
+  const saveVideo = useCallback(
+    async (video: Exercise, files: { video?: Blob; thumb?: Blob }) => {
+      const before = ref.current.customVideos.find((v) => v.id === video.id);
+      const next = { ...video };
+      if (files.video) next.video = await putMedia('video', video.id, files.video);
+      if (files.thumb) next.thumbnail = await putMedia('thumb', video.id, files.thumb);
+      commitVideos([next, ...ref.current.customVideos.filter((v) => v.id !== video.id)]);
+      if (before && before.video !== next.video) await deleteMedia(before.video);
+      if (before && before.thumbnail !== next.thumbnail) await deleteMedia(before.thumbnail);
+    },
+    [commitVideos],
+  );
+
+  const deleteVideo = useCallback(
+    async (id: string) => {
+      const target = ref.current.customVideos.find((v) => v.id === id);
+      if (!target) return;
+      commitVideos(ref.current.customVideos.filter((v) => v.id !== id));
+      await deleteMedia(target.video);
+      await deleteMedia(target.thumbnail);
+    },
+    [commitVideos],
+  );
+
+  const saveAd = useCallback(
+    async (ad: AdVideo, file?: Blob) => {
+      const before = ref.current.ads.find((a) => a.id === ad.id);
+      const next = file ? { ...ad, video: await putMedia('ad', ad.id, file) } : ad;
+      commitAds([next, ...ref.current.ads.filter((a) => a.id !== ad.id)]);
+      if (before && before.video !== next.video) await deleteMedia(before.video);
+    },
+    [commitAds],
+  );
+
+  const deleteAd = useCallback(
+    async (id: string) => {
+      const target = ref.current.ads.find((a) => a.id === id);
+      if (!target) return;
+      commitAds(ref.current.ads.filter((a) => a.id !== id));
+      await deleteMedia(target.video);
+    },
+    [commitAds],
   );
 
   const saveProgress = useCallback(
@@ -238,31 +408,6 @@ export function AppStoreProvider({
       void repository.saveInProgress(stamped);
     },
     [commit, repository],
-  );
-
-  const replaceCurrentSlot = useCallback(
-    (cur: InProgress): InProgress => {
-      const i = cur.slotIndex;
-      const opts = recommendBase(cur.posture, cur.plannedMin);
-      const neighbors = [
-        exerciseById(cur.playlist[i - 1] ?? '')?.bodyPart,
-        exerciseById(cur.playlist[i + 1] ?? '')?.bodyPart,
-      ];
-      const rep = pickReplacement(opts, cur.playlist, i, neighbors);
-      const playlist = [...cur.playlist];
-      const slotPlayedSec = [...cur.slotPlayedSec];
-      const skippedItem: SessionItem = {
-        exerciseId: cur.playlist[i],
-        playedSec: Math.round(slotPlayedSec[i] ?? 0),
-        skipped: true,
-      };
-      if (rep) playlist[i] = rep.id;
-      slotPlayedSec[i] = 0;
-      const next = { ...cur, playlist, slotPlayedSec, extraItems: [...cur.extraItems, skippedItem] };
-      saveProgress(next);
-      return next;
-    },
-    [recommendBase, saveProgress],
   );
 
   const finishSession = useCallback(
@@ -275,15 +420,6 @@ export function AppStoreProvider({
       const sessions = ref.current.sessions.map((s) =>
         s.id === sessionId ? { ...s, perceived } : s,
       );
-      commit({ sessions });
-      void repository.saveSessions(sessions);
-    },
-    [commit, repository],
-  );
-
-  const setSessionExtras = useCallback(
-    (sessionId: string, extras: { counts?: Record<string, number>; memo?: string }) => {
-      const sessions = ref.current.sessions.map((s) => (s.id === sessionId ? { ...s, ...extras } : s));
       commit({ sessions });
       void repository.saveSessions(sessions);
     },
@@ -315,16 +451,6 @@ export function AppStoreProvider({
     [commit, repository],
   );
 
-  const addPhoto = useCallback(
-    (input: Omit<ProofPhoto, 'id'>): ProofPhoto => {
-      const photo: ProofPhoto = { ...input, id: newId() };
-      const photos = [photo, ...ref.current.photos.filter((p) => p.sessionId !== input.sessionId)];
-      commit({ photos });
-      void repository.savePhotos(photos);
-      return photo;
-    },
-    [commit, repository],
-  );
 
   const waterCrop = useCallback((): WaterResult => {
     const result = waterCropRule(
@@ -387,6 +513,10 @@ export function AppStoreProvider({
     (notification: AppSettings['notification']) => patchSettings({ notification }),
     [patchSettings],
   );
+  const setLastPosture = useCallback(
+    (lastPosture: Posture | null) => patchSettings({ lastPosture }),
+    [patchSettings],
+  );
 
   const setReminder = useCallback(
     (patch: Partial<AppSettings['reminder']>) =>
@@ -408,6 +538,7 @@ export function AppStoreProvider({
   const resetAll = useCallback(async () => {
     await repository.clear();
     const fresh = await repository.load();
+    setCustomExercises(fresh.customVideos);
     ref.current = fresh;
     setData(fresh);
   }, [repository]);
@@ -415,16 +546,25 @@ export function AppStoreProvider({
   const value = useMemo<StoreValue>(
     () => ({
       ...data,
+      catalog: mergeCatalog(data.customVideos),
       ready,
       startSession,
+      startSelected,
+      continueAfter,
+      recordView,
+      toggleLike,
+      recordAdView,
+      recordAdClick,
+      saveVideo,
+      deleteVideo,
+      saveAd,
+      deleteAd,
       saveProgress,
-      replaceCurrentSlot,
       finishSession,
       setPerceived,
-      setSessionExtras,
+      setLastPosture,
       addSchedule,
       updateSchedule,
-      addPhoto,
       waterCrop,
       getWelcome,
       markWelcomeShown,
@@ -436,8 +576,9 @@ export function AppStoreProvider({
       resetAll,
     }),
     [
-      data, ready, startSession, saveProgress, replaceCurrentSlot, finishSession, setPerceived,
-      setSessionExtras, addSchedule, updateSchedule, addPhoto,
+      data, ready, startSession, startSelected, continueAfter, recordView, toggleLike, recordAdView, recordAdClick,
+      saveVideo, deleteVideo, saveAd, deleteAd, saveProgress, finishSession, setPerceived,
+      setLastPosture, addSchedule, updateSchedule,
       waterCrop, getWelcome, markWelcomeShown, markLoginPromptShown, mockLogin, setNotification,
       setReminder, recordNotificationShown, resetAll,
     ],

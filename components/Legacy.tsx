@@ -3,10 +3,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
-import { POSTURE_LABEL, type Posture } from '@/lib/types';
+import type { Posture } from '@/lib/types';
 
 /**
- * 수정 전 화면(357e0d7)에서 쓰던 공통 모양: 흐름 화면 머리, 자세 카드, 하단 고정 버튼 바.
+ * 수정 전 화면(357e0d7)에서 쓰던 공통 모양: 흐름 화면 머리, 자세 아이콘, 하단 고정 버튼 바.
  * 디자인 기준: docs/design-spec.md §6
  */
 
@@ -103,54 +103,6 @@ export function PostureIcon({ posture, size, color }: { posture: Posture; size: 
   );
 }
 
-/** 수정 전 자세 카드 목록 (운동 탭·자세 선택 공용) */
-export function PostureCards({
-  onSelect,
-  lastPosture,
-}: {
-  onSelect: (p: Posture) => void;
-  lastPosture?: Posture | null;
-}) {
-  const colors = useColors();
-  return (
-    <View style={styles.cards}>
-      {POSTURE_ORDER.map((p) => {
-        const m = POSTURE_META[p];
-        const last = lastPosture === p;
-        return (
-          <Pressable
-            key={p}
-            accessibilityRole="button"
-            accessibilityLabel={POSTURE_LABEL[p]}
-            onPress={() => onSelect(p)}
-            style={({ pressed }) => [
-              styles.card,
-              {
-                backgroundColor: colors.card,
-                borderColor: last ? colors.accent : colors.border,
-                borderWidth: last ? 2 : 1,
-                transform: [{ scale: pressed ? 0.97 : 1 }],
-              },
-            ]}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: m.bg }]}>
-              <PostureIcon posture={p} size={30} />
-            </View>
-            <View style={styles.cardText}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>{POSTURE_LABEL[p]}</Text>
-              <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>
-                {last ? '지난번에 고른 자세 · ' : ''}
-                {m.desc}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 /** 하단 고정 버튼 바 */
 export function BottomBar({ children }: { children: React.ReactNode }) {
   const colors = useColors();
@@ -181,12 +133,6 @@ const styles = StyleSheet.create({
   stepWrap: { flexDirection: 'row', gap: 6 },
   stepDot: { width: 8, height: 8, borderRadius: 4 },
   rightSlot: { minWidth: 40, alignItems: 'flex-end' },
-  cards: { gap: 12 },
-  card: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 16, gap: 14 },
-  iconWrap: { width: 56, height: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  cardText: { flex: 1 },
-  cardTitle: { fontSize: 17, fontWeight: '700' },
-  cardDesc: { fontSize: 13, marginTop: 2 },
   bottom: {
     flexDirection: 'row',
     gap: 12,

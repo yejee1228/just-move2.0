@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { addDays, dateKey, diffDays, weekStartKey } from '@/lib/date';
 import { creditedMinutes, dropsToGrant, isItemCompleted } from '@/lib/session';
 import { addDrops, initialFarm, waterCrop } from '@/lib/farm';
-import { buildPlaylist, pickReplacement } from '@/lib/recommend';
+import { continuePlaylist, formatCount, playlistFrom, rankVideos, videoScore } from '@/lib/recommend';
+import { planAds } from '@/lib/ads';
+import { topExercises } from '@/lib/stats';
+import { adStatus, adTotals, ctrText, dailyCsv, isAdLive, summaryCsv } from '@/lib/adReport';
+import type { AdVideo } from '@/lib/types';
 import { pickMessage, relationOf, restBucketOf, welcomeRestDays } from '@/lib/messages';
-import { appConfig } from '@/lib/config';
 import { EXERCISES, TIP_CARDS, WELCOME_MESSAGES } from '@/data/content';
 
 describe('날짜 (KST)', () => {
@@ -21,18 +24,19 @@ describe('날짜 (KST)', () => {
 });
 
 describe('인정 시간·물방울', () => {
-  it('1·3·5분 단위로 내림', () => {
+  it('1분 단위로 내림', () => {
     expect(creditedMinutes(59)).toBe(0);
     expect(creditedMinutes(60)).toBe(1);
-    expect(creditedMinutes(179)).toBe(1);
-    expect(creditedMinutes(270)).toBe(3); // 4분 30초 → 3분
-    expect(creditedMinutes(300)).toBe(5);
-    expect(creditedMinutes(900)).toBe(5);
+    expect(creditedMinutes(179)).toBe(2);
+    expect(creditedMinutes(270)).toBe(4); // 4분 30초 → 4분
+    expect(creditedMinutes(900)).toBe(15);
   });
-  it('하루 5개 한도', () => {
-    expect(dropsToGrant(3, 0, 5)).toBe(3);
-    expect(dropsToGrant(5, 3, 5)).toBe(2);
-    expect(dropsToGrant(5, 5, 5)).toBe(0);
+  it('1분 이상 본 운동 1번에 물방울 1개, 하루 5개 한도', () => {
+    expect(dropsToGrant(creditedMinutes(59), 0, 5)).toBe(0);
+    expect(dropsToGrant(creditedMinutes(60), 0, 5)).toBe(1);
+    expect(dropsToGrant(creditedMinutes(900), 0, 5)).toBe(1); // 15분 봐도 1개
+    expect(dropsToGrant(3, 4, 5)).toBe(1);
+    expect(dropsToGrant(3, 5, 5)).toBe(0);
     expect(dropsToGrant(1, 7, 5)).toBe(0);
   });
   it('동작 완료 판정', () => {
@@ -67,67 +71,129 @@ describe('농장', () => {
   });
 });
 
-describe('추천', () => {
-  const base = {
-    exercises: EXERCISES,
-    progress: {} as Record<string, number>,
-    masteredThreshold: appConfig.masteredThreshold,
-    newRatio: appConfig.newRatio,
-    masteredChance: 0,
-  };
-  it('선택한 자세의 동작만 나온다', () => {
+describe('영상 추천 (바둑판 순서)', () => {
+  const stat = { picks: 0, plays: 0, completes: 0, quits: 0 };
+  it('선택한 자세의 영상을 난이도와 상관없이 모두 보여 준다', () => {
     for (const posture of ['lying', 'sitting', 'standing', 'walking'] as const) {
-      const list = buildPlaylist({ ...base, posture, slots: 5 });
-      expect(list).toHaveLength(5);
+      const list = rankVideos(EXERCISES, posture, {});
+      expect(list).toHaveLength(EXERCISES.filter((e) => e.active && e.postures.includes(posture)).length);
       expect(list.every((e) => e.postures.includes(posture))).toBe(true);
     }
+    expect(rankVideos(EXERCISES, 'all', {})).toHaveLength(EXERCISES.filter((e) => e.active).length);
   });
-  it('첫 사용자의 첫 동작은 첫 동작 지정 동작', () => {
-    const list = buildPlaylist({ ...base, posture: 'sitting', slots: 3 });
-    expect(list[0].isFirst).toBe(true);
+  it('기록이 없으면 첫 동작 지정 영상이 맨 앞', () => {
+    expect(rankVideos(EXERCISES, 'sitting', {})[0].isFirst).toBe(true);
   });
-  it('익히는 중 동작을 먼저 추천한다 (1분)', () => {
-    const progress = { 'sitting-03': 2, 'sitting-01': 1 };
-    const seen = new Set<string>();
-    for (let i = 0; i < 30; i++) {
-      seen.add(buildPlaylist({ ...base, progress, posture: 'sitting', slots: 1 })[0].id);
-    }
-    expect([...seen].every((id) => id in progress)).toBe(true);
-  });
-  it('같은 부위가 연속되지 않는다 (가능한 경우)', () => {
-    const progress = Object.fromEntries(EXERCISES.map((e) => [e.id, 1]));
-    for (let i = 0; i < 50; i++) {
-      const list = buildPlaylist({ ...base, progress, posture: 'walking', slots: 5 });
-      for (let k = 1; k < list.length; k++) {
-        if (list[k].bodyPart === list[k - 1].bodyPart) {
-          // 같은 부위 후보밖에 없는 경우만 허용
-          const others = EXERCISES.filter(
-            (e) => e.postures.includes('walking') && e.bodyPart !== list[k - 1].bodyPart,
-          );
-          expect(others.length).toBe(0);
-        }
-      }
-    }
-  });
-  it('3·5분은 새 동작이 섞이고 목록 안에서 중복되지 않는다', () => {
-    const progress = {
-      'lying-01': 2, 'lying-02': 3, 'lying-03': 1, 'lying-04': 0, 'lying-05': 0,
-    };
-    for (let i = 0; i < 30; i++) {
-      const list = buildPlaylist({ ...base, progress, posture: 'lying', slots: 3 });
-      expect(new Set(list.map((e) => e.id)).size).toBe(3);
-      expect(list.some((e) => (progress[e.id as keyof typeof progress] ?? 0) === 0)).toBe(true);
-    }
-  });
-  it('다음 동작: 현재 목록에 없는 다른 동작으로 교체', () => {
-    const list = buildPlaylist({ ...base, posture: 'standing', slots: 3 });
+  it('끝까지 본·자주 고른 영상은 위로, 중간에 넘긴 영상은 아래로', () => {
+    const list = rankVideos(EXERCISES, 'lying', {
+      'lying-03': { ...stat, completes: 3, picks: 2 },
+      'lying-04': { ...stat, picks: 1 },
+      'lying-02': { ...stat, quits: 2 },
+    });
     const ids = list.map((e) => e.id);
-    const rep = pickReplacement({ ...base, posture: 'standing', slots: 3 }, ids, 1, [
-      list[0].bodyPart,
-      list[2].bodyPart,
+    expect(ids[0]).toBe('lying-03');
+    expect(ids[1]).toBe('lying-04');
+    expect(ids[ids.length - 1]).toBe('lying-02');
+  });
+  it('고른 영상이 맨 앞이고 뒤에 추천 영상이 최대 10개까지 이어진다', () => {
+    const list = rankVideos(EXERCISES, 'all', {});
+    const ids = list.map((e) => e.id);
+    const pl = playlistFrom(list, ids[4], 10);
+    expect(pl).toHaveLength(10);
+    expect(pl[0]).toBe(ids[4]);
+    expect(pl.slice(1, 4)).toEqual(ids.slice(0, 3));
+    expect(new Set(pl).size).toBe(10);
+  });
+  it('계속 운동하기는 방금 본 영상을 빼고, 다 봤으면 처음부터', () => {
+    const list = rankVideos(EXERCISES, 'lying', {});
+    const ids = list.map((e) => e.id);
+    expect(continuePlaylist(list, ids.slice(0, 2), 10)).toEqual(ids.slice(2));
+    expect(continuePlaylist(list, ids, 10)).toEqual(ids);
+  });
+  it('하트를 누른 영상은 맞춤 점수가 오른다', () => {
+    const s = { picks: 0, plays: 0, completes: 0, quits: 0 };
+    expect(videoScore({ ...s, liked: true })).toBeGreaterThan(videoScore(s));
+  });
+  it('조회수·좋아요 표시', () => {
+    expect(formatCount(950)).toBe('950');
+    expect(formatCount(1200)).toBe('1.2천');
+    expect(formatCount(34000)).toBe('3.4만');
+    expect(formatCount(10000)).toBe('1만');
+  });
+});
+
+describe('자주 한 운동', () => {
+  it('30초 이상 본 것만 많이 한 순서로 센다', () => {
+    const item = (exerciseId: string, playedSec: number, skipped = false) => ({ exerciseId, playedSec, skipped });
+    const base = { startedAt: '', localDate: '2026-11-09', posture: 'sitting' as const, actualSec: 120, creditedMin: 2, dropsEarned: 1 };
+    const top = topExercises([
+      { ...base, id: '1', items: [item('a', 60), item('b', 60), item('c', 10)] },
+      { ...base, id: '2', items: [item('b', 40), item('d', 60, true)] },
+      { ...base, id: '3', creditedMin: 0, items: [item('a', 50)] },
     ]);
-    expect(rep).not.toBeNull();
-    expect(ids).not.toContain(rep!.id);
+    expect(top).toEqual([{ id: 'b', count: 2 }, { id: 'a', count: 1 }]);
+  });
+});
+
+describe('광고 게시 기간·결과', () => {
+  const ad: AdVideo = {
+    id: 'a',
+    title: '=위험, "제목"',
+    advertiser: '회사',
+    video: 'idb:x',
+    startDate: '2026-11-01',
+    endDate: '2026-11-10',
+    skipAfterSec: 5,
+    active: true,
+    stats: { '2026-11-02': { views: 10, clicks: 1 }, '2026-11-05': { views: 30, clicks: 3 } },
+    createdAt: '',
+  };
+  it('게시 기간 양 끝 날짜까지 게시 중', () => {
+    expect(adStatus(ad, '2026-10-31')).toBe('scheduled');
+    expect(isAdLive(ad, '2026-11-01')).toBe(true);
+    expect(isAdLive(ad, '2026-11-10')).toBe(true);
+    expect(adStatus(ad, '2026-11-11')).toBe('ended');
+    expect(adStatus({ ...ad, active: false }, '2026-11-05')).toBe('hidden');
+  });
+  it('조회 기간별 합계와 클릭률', () => {
+    expect(adTotals(ad)).toEqual({ views: 40, clicks: 4 });
+    expect(adTotals(ad, '2026-11-03')).toEqual({ views: 30, clicks: 3 });
+    expect(adTotals(ad, '', '2026-11-02')).toEqual({ views: 10, clicks: 1 });
+    expect(ctrText(40, 4)).toBe('10.0%');
+    expect(ctrText(0, 0)).toBe('-');
+  });
+  it('CSV: 엑셀 수식이 실행되지 않고 특수문자를 감싼다', () => {
+    const line = summaryCsv([ad], '2026-11-05').split('\r\n')[1];
+    expect(line.startsWith('"\'=위험, ""제목"""')).toBe(true);
+    expect(line.endsWith(',게시 중,40,4,10.0%')).toBe(true);
+    expect(dailyCsv([ad], '2026-11-03').split('\r\n')).toHaveLength(2);
+    const none = summaryCsv([{ ...ad, stats: {} }], '2026-11-05').split('\r\n')[1];
+    expect(none.endsWith(',0,0,-')).toBe(true);
+  });
+});
+
+describe('영상 사이 광고', () => {
+  it('광고가 없으면 계획도 없다', () => {
+    expect(planAds(10, [], 2, 3)).toEqual({});
+  });
+  it('영상 2~3개마다 들어가고 마지막 영상 뒤에는 없다', () => {
+    for (let n = 0; n < 200; n++) {
+      const slots = Object.keys(planAds(10, ['a', 'b'], 2, 3)).map(Number).sort((a, b) => a - b);
+      expect(slots[0] === 1 || slots[0] === 2).toBe(true);
+      slots.forEach((s, i) => {
+        expect(s).toBeLessThan(9);
+        if (i > 0) expect([2, 3]).toContain(s - slots[i - 1]);
+      });
+    }
+  });
+  it('영상이 2개 이하이면 광고 자리가 거의 없고, 광고 2개면 연달아 같은 광고가 안 나온다', () => {
+    expect(planAds(1, ['a'], 2, 3)).toEqual({});
+    for (let n = 0; n < 100; n++) {
+      const list = Object.entries(planAds(10, ['a', 'b'], 2, 3)).sort((x, y) => Number(x[0]) - Number(y[0])).map((x) => x[1]);
+      list.forEach((id, i) => {
+        if (i > 0) expect(id).not.toBe(list[i - 1]);
+      });
+    }
   });
 });
 

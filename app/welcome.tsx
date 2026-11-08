@@ -42,7 +42,7 @@ export default function WelcomeScreen() {
         <Button
           label="바로 1분 하기"
           variant="accent"
-          onPress={() => router.replace('/exercise/position')}
+          onPress={() => router.replace('/exercise/videos')}
           style={{ minHeight: 60 }}
         />
         {inProgress ? (

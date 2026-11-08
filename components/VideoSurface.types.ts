@@ -8,4 +8,6 @@ export interface VideoSurfaceProps {
   onFail: () => void;
   /** 자동 재생이 브라우저에서 막혔을 때 */
   onBlocked: () => void;
+  /** 파일을 불러와 영상 길이(초)를 알았을 때 */
+  onDuration?: (sec: number) => void;
 }

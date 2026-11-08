@@ -1,15 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -27,8 +17,8 @@ import { PERCEIVED_LABEL, type Perceived } from '@/lib/types';
 import { useStore } from '@/store/AppStore';
 
 /**
- * M-04 운동 완료 — 수정 전 완료 화면의 2단계(입력 → 보상)를 유지한다.
- * 기록은 이 화면에 들어오는 순간 저장되어 있고, 입력 단계는 덧붙이는 정보(체감 난이도·횟수·메모)다.
+ * M-04 운동 완료 — 수정 전 완료 화면의 2단계(후기 → 보상)를 유지한다.
+ * 기록은 이 화면에 들어오는 순간 저장되어 있고, 후기는 체감 난이도(가벼웠어요/적당했어요/힘들었어요)만 고른다.
  */
 const PERCEIVED_ORDER: Perceived[] = ['light', 'fit', 'hard'];
 
@@ -36,26 +26,19 @@ export default function CompleteScreen() {
   const colors = useColors();
   const pad = useLegacyPad();
   const params = useLocalSearchParams<{ id?: string; phase?: string }>();
-  const {
-    ready,
-    sessions,
-    settings,
-    setPerceived,
-    setSessionExtras,
-    markLoginPromptShown,
-    mockLogin,
-  } = useStore();
+  const { ready, sessions, settings, setPerceived, continueAfter, markLoginPromptShown, mockLogin } = useStore();
   const session = sessions.find((s) => s.id === params.id);
   const [phase, setPhase] = useState<'entry' | 'reward'>(params.phase === 'reward' ? 'reward' : 'entry');
-  const [counts, setCounts] = useState<Record<string, string>>({});
-  const [memo, setMemo] = useState('');
   const [sheet, setSheet] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   const played = useMemo(() => {
     if (!session) return [];
     const ids = session.items.filter((it) => !it.skipped && it.playedSec > 0).map((it) => it.exerciseId);
     return [...new Set(ids)].map((id) => exerciseById(id)).filter((e): e is NonNullable<typeof e> => !!e);
   }, [session]);
+  // 진행한 운동 요약: 첫 운동 이름 +나머지 개수
+  const playedSummary = played.length > 1 ? `${played[0].name} +${played.length - 1}` : (played[0]?.name ?? '운동');
 
   useEffect(() => {
     if (session && session.creditedMin >= 1 && phase === 'entry') {
@@ -72,6 +55,11 @@ export default function CompleteScreen() {
   }, [shouldAskLogin]);
 
   const goHome = () => router.replace('/(tabs)');
+  const keepGoing = () => {
+    if (!session) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (continueAfter(session.id)) router.replace('/exercise/play');
+  };
 
   if (!ready || !session) {
     return (
@@ -114,7 +102,7 @@ export default function CompleteScreen() {
           </Pressable>
           <Pressable
             style={[styles.fillBtn, { backgroundColor: colors.accent }]}
-            onPress={() => router.replace('/exercise/position')}
+            onPress={() => router.replace('/exercise/videos')}
           >
             <Text style={styles.fillBtnText}>다시 해보기</Text>
           </Pressable>
@@ -123,26 +111,13 @@ export default function CompleteScreen() {
     );
   }
 
-  const saveExtras = () => {
-    const parsed: Record<string, number> = {};
-    for (const [id, v] of Object.entries(counts)) {
-      const n = Number(v);
-      if (v !== '' && Number.isFinite(n)) parsed[id] = n;
-    }
-    setSessionExtras(session.id, {
-      counts: Object.keys(parsed).length ? parsed : undefined,
-      memo: memo.trim() || undefined,
-    });
-  };
-
-  // ── 입력 단계 ──────────────────────────────────────────────
+  // ── 후기 단계 ──────────────────────────────────────────────
   if (phase === 'entry') {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
           <ScrollView
             contentContainerStyle={[styles.scroll, { paddingTop: pad.top + 16, paddingBottom: 40 }]}
-            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             <Animated.View entering={FadeInDown.duration(500)} style={styles.successSection}>
@@ -156,12 +131,35 @@ export default function CompleteScreen() {
             <Animated.View entering={FadeInUp.delay(300).duration(400)}>
               <View style={[styles.exCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.exCardLabel, { color: colors.textSecondary }]}>운동</Text>
-                <Text style={[styles.exCardTitle, { color: colors.text }]}>
-                  {played.map((e) => e.name).join(', ') || '운동'}
+                <Text style={[styles.exCardTitle, { color: colors.text }]} numberOfLines={1}>
+                  {playedSummary}
                 </Text>
                 <Text style={[styles.exCardGoal, { color: colors.textSecondary }]}>
                   {session.creditedMin}분 동안 함께했어요
                 </Text>
+                {showAll ? (
+                  <View style={[styles.exList, { borderTopColor: colors.border }]}>
+                    {played.map((e, i) => (
+                      <View key={e.id} style={styles.exItem}>
+                        <Text style={[styles.exNum, { color: colors.accent }]}>{i + 1}</Text>
+                        <Text style={[styles.exName, { color: colors.text }]}>{e.name}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                {played.length > 1 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: showAll }}
+                    accessibilityLabel={showAll ? '운동 목록 접기' : '진행한 운동 모두 보기'}
+                    onPress={() => setShowAll((v) => !v)}
+                    hitSlop={10}
+                    style={styles.more}
+                  >
+                    <Text style={[styles.moreText, { color: colors.textSecondary }]}>more</Text>
+                    <Ionicons name={showAll ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textSecondary} />
+                  </Pressable>
+                ) : null}
               </View>
 
               <Text style={[styles.fieldLabel, { color: colors.text }]}>오늘 운동은 어땠나요?</Text>
@@ -191,85 +189,23 @@ export default function CompleteScreen() {
                   );
                 })}
               </View>
-
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>실제로 몇 번 했나요? (선택)</Text>
-              {played.map((ex) => {
-                const v = counts[ex.id] ?? '';
-                const unit = ex.targetUnit;
-                return (
-                  <View key={ex.id} style={{ marginBottom: 12 }}>
-                    <Text style={[styles.countName, { color: colors.textSecondary }]}>
-                      {ex.name} · 목표 {ex.targetValue}
-                      {unit}
-                    </Text>
-                    <View style={[styles.inputRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`${ex.name} 횟수 줄이기`}
-                        onPress={() =>
-                          setCounts((c) => ({ ...c, [ex.id]: v === '' ? '' : String(Math.max(0, Number(v) - 1)) }))
-                        }
-                        style={[styles.stepper, { backgroundColor: colors.secondary }]}
-                      >
-                        <Ionicons name="remove" size={20} color={colors.primary} />
-                      </Pressable>
-                      <TextInput
-                        value={v}
-                        onChangeText={(t) => setCounts((c) => ({ ...c, [ex.id]: t.replace(/[^0-9]/g, '') }))}
-                        keyboardType="numeric"
-                        placeholder="-"
-                        placeholderTextColor={colors.mutedForeground}
-                        style={[styles.valueInput, { color: colors.text }]}
-                        selectTextOnFocus
-                        accessibilityLabel={`${ex.name} 실제 횟수`}
-                      />
-                      <Text style={[styles.unitText, { color: colors.textSecondary }]}>{unit.replace(/\s*\(.*\)/, '')}</Text>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`${ex.name} 횟수 늘리기`}
-                        onPress={() =>
-                          setCounts((c) => ({ ...c, [ex.id]: v === '' ? String(ex.targetValue) : String(Number(v) + 1) }))
-                        }
-                        style={[styles.stepper, { backgroundColor: colors.secondary }]}
-                      >
-                        <Ionicons name="add" size={20} color={colors.primary} />
-                      </Pressable>
-                    </View>
-                  </View>
-                );
-              })}
-
-              <Text style={[styles.fieldLabel, { color: colors.text, marginTop: 8 }]}>메모 (선택)</Text>
-              <TextInput
-                value={memo}
-                onChangeText={setMemo}
-                placeholder="오늘 느낀 점을 남겨보세요..."
-                placeholderTextColor={colors.mutedForeground}
-                style={[styles.memoInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-                multiline
-                numberOfLines={3}
-              />
             </Animated.View>
           </ScrollView>
-        </KeyboardAvoidingView>
+        </View>
 
         <BottomBar>
           <Pressable
             accessibilityRole="button"
-            style={({ pressed }) => [styles.photoBtn, { borderColor: colors.primary, opacity: pressed ? 0.8 : 1 }]}
-            onPress={() => {
-              saveExtras();
-              router.push({ pathname: '/exercise/photo', params: { id: session.id } });
-            }}
+            style={({ pressed }) => [styles.saveBtn, { backgroundColor: colors.accent, opacity: pressed ? 0.85 : 1 }]}
+            onPress={keepGoing}
           >
-            <Ionicons name="camera-outline" size={18} color={colors.primary} />
-            <Text style={[styles.photoBtnText, { color: colors.primary }]}>인증사진 남기기</Text>
+            <Ionicons name="play" size={18} color="#FFFFFF" />
+            <Text style={styles.saveBtnText}>계속 운동하기</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
             style={({ pressed }) => [styles.saveBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 }]}
             onPress={() => {
-              saveExtras();
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setPhase('reward');
             }}
@@ -289,7 +225,7 @@ export default function CompleteScreen() {
   const newBadges = badges(movedDateKeys(sessions), today).filter((b) => b.unlocked && !beforeBadges.has(b.id));
   const level = rewardLevel(totalPoints(sessions));
   const isMax = level.level === 5;
-  const dropLimitReached = session.dropsEarned < session.creditedMin;
+  const dropLimitReached = session.dropsEarned === 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -304,7 +240,7 @@ export default function CompleteScreen() {
           <Text style={[styles.rewardHeadline, { color: colors.text }]}>오늘도 움직였어요!</Text>
           <View style={[styles.rewardCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.rewardExName, { color: colors.text }]} numberOfLines={2}>
-              {played.map((e) => e.name).join(', ') || '운동'}
+              {playedSummary}
             </Text>
             {session.perceived ? <PerceivedChip value={session.perceived} /> : null}
             <View style={styles.rewardBoxes}>
@@ -354,6 +290,9 @@ export default function CompleteScreen() {
               ))}
             </View>
           ) : null}
+          <Pressable accessibilityRole="button" onPress={keepGoing} style={styles.homeLink}>
+            <Text style={[styles.homeLinkText, { color: colors.primary, fontWeight: '800' }]}>계속 운동하기</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" onPress={goHome} style={styles.homeLink}>
             <Text style={[styles.homeLinkText, { color: colors.textSecondary }]}>홈으로</Text>
           </Pressable>
@@ -440,17 +379,17 @@ const styles = StyleSheet.create({
   exCardLabel: { fontSize: 12, fontWeight: '600' },
   exCardTitle: { fontSize: 18, fontWeight: '800' },
   exCardGoal: { fontSize: 13 },
+  exList: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 10, paddingTop: 10, gap: 8 },
+  exItem: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  exNum: { width: 18, fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  exName: { flex: 1, fontSize: 14, fontWeight: '600' },
+  more: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-end', minHeight: 24, marginTop: 2 },
+  moreText: { fontSize: 12, fontWeight: '700' },
   fieldLabel: { fontSize: 14, fontWeight: '700', marginBottom: 8 },
   optional: { fontSize: 12, marginTop: -4, marginBottom: 8 },
   perceivedRow: { flexDirection: 'row', gap: 8, marginBottom: 24 },
   perceived: { flex: 1, minHeight: 44, borderRadius: 20, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   perceivedText: { fontSize: 13, fontWeight: '700' },
-  countName: { fontSize: 12, marginBottom: 6 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
-  stepper: { width: 44, height: 52, alignItems: 'center', justifyContent: 'center' },
-  valueInput: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '700', height: 52 },
-  unitText: { fontSize: 14, paddingHorizontal: 8 },
-  memoInput: { borderRadius: 12, borderWidth: 1, padding: 14, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 16 },
   rewardTop: { alignItems: 'center', marginBottom: 24, gap: 12 },
   rewardIcon: { width: 100, height: 100, borderRadius: 50, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   rewardHeadline: { fontSize: 22, fontWeight: '800' },
@@ -479,19 +418,8 @@ const styles = StyleSheet.create({
   badgeHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   badgeHeaderText: { fontSize: 15, fontWeight: '800' },
   badgeName: { fontSize: 14, fontWeight: '600', marginLeft: 24 },
-  photoBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderRadius: 14,
-    borderWidth: 2,
-    paddingVertical: 14,
-  },
-  photoBtnText: { fontSize: 14, fontWeight: '700' },
   saveBtn: {
-    flex: 1.5,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

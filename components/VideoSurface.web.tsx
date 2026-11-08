@@ -9,6 +9,7 @@ export default function VideoSurface({
   onEnded,
   onFail,
   onBlocked,
+  onDuration,
 }: VideoSurfaceProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
 
@@ -38,6 +39,10 @@ export default function VideoSurface({
     onPlaying: () => onActiveChange(true),
     onPause: () => onActiveChange(false),
     onWaiting: () => onActiveChange(false),
+    onLoadedMetadata: (e: { currentTarget: HTMLVideoElement }) => {
+      const d = e.currentTarget.duration;
+      if (onDuration && Number.isFinite(d) && d > 0) onDuration(d);
+    },
     onEnded,
     onError: onFail,
     style: { width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' },

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -13,6 +13,7 @@ import {
   Segment,
   StatBox,
 } from '@/components/StatsUI';
+import { POSTURE_META, PostureIcon } from '@/components/Legacy';
 import { MonthGrid } from '@/components/MonthCalendar';
 import { exerciseById } from '@/data/content';
 import {
@@ -31,9 +32,10 @@ import {
   mostPlayedExercise,
   perceivedCounts,
   rangeSummary,
+  topExercises,
   weekMinutes,
 } from '@/lib/stats';
-import { PERCEIVED_LABEL, type Session } from '@/lib/types';
+import { PERCEIVED_LABEL, type Exercise, type Session } from '@/lib/types';
 import { useStore } from '@/store/AppStore';
 
 /**
@@ -45,11 +47,148 @@ type SegmentName = '최근 기록' | '주간 통계' | '월간 통계';
 const SEGMENTS: SegmentName[] = ['최근 기록', '주간 통계', '월간 통계'];
 const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 
-function sessionTitle(s: Session): string {
-  const names = s.items.filter((it) => !it.skipped).map((it) => exerciseById(it.exerciseId)?.name);
-  const first = names.find(Boolean) ?? exerciseById(s.items[0]?.exerciseId ?? '')?.name ?? '운동';
-  const others = new Set(names.filter(Boolean)).size - 1;
-  return others > 0 ? `${first} 외 ${others}개` : first;
+const TOP_N = 5;
+
+/** 그 운동에서 실제로 본 영상 (본 순서, 지금 없는 영상은 뺀다) */
+function playedExercises(s: Session): Exercise[] {
+  const ids = s.items.filter((it) => !it.skipped && it.playedSec > 0).map((it) => it.exerciseId);
+  return [...new Set(ids)].map((id) => exerciseById(id)).filter((e): e is Exercise => !!e);
+}
+
+function StatRow({ sum, drops }: { sum: ReturnType<typeof rangeSummary>; drops: number }) {
+  return (
+    <View style={styles.statGrid}>
+      <StatBox compact label="완료 횟수" value={String(sum.count)} />
+      <StatBox compact label="운동한 날" value={`${sum.movedDays}일`} />
+      <StatBox compact label="운동 시간" value={sum.minutes > 0 ? `${sum.minutes}분` : '-'} />
+      <StatBox compact label="MOVE" value={String(sum.points)} />
+      <StatBox compact label="물방울" value={`${drops}개`} />
+    </View>
+  );
+}
+
+/** 가장 자주 했던 운동 순위 */
+function TopExercises({ sessions }: { sessions: Session[] }) {
+  const colors = useColors();
+  const rows = topExercises(sessions)
+    .map((t) => ({ ...t, ex: exerciseById(t.id) }))
+    .filter((t): t is typeof t & { ex: Exercise } => !!t.ex)
+    .slice(0, TOP_N);
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <SectionLabel>가장 자주 했던 운동 TOP {TOP_N}</SectionLabel>
+      <View style={[styles.topCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {rows.map(({ ex, count }, i) => (
+          <View key={ex.id} style={styles.topRow}>
+            <View style={[styles.rank, { backgroundColor: i === 0 ? colors.accent : colors.secondary }]}>
+              <Text style={[styles.rankText, { color: i === 0 ? '#FFFFFF' : colors.textSecondary }]}>{i + 1}</Text>
+            </View>
+            <View style={[styles.topIcon, { backgroundColor: POSTURE_META[ex.postures[0]].bg }]}>
+              <PostureIcon posture={ex.postures[0]} size={18} />
+            </View>
+            <Text style={[styles.topName, { color: colors.text }]} numberOfLines={1}>
+              {ex.name}
+            </Text>
+            <Text style={[styles.topCount, { color: colors.primary }]}>{count}회</Text>
+          </View>
+        ))}
+      </View>
+    </>
+  );
+}
+
+function RecordCard({ item }: { item: Session }) {
+  const colors = useColors();
+  const { startSelected } = useStore();
+  const [showAll, setShowAll] = useState(false);
+  const played = playedExercises(item);
+  const title = played.length > 1 ? `${played[0].name} +${played.length - 1}` : (played[0]?.name ?? '운동');
+  const countText = item.counts
+    ? Object.entries(item.counts)
+        .map(([id, n]) => `${exerciseById(id)?.name ?? ''} ${n}${exerciseById(id)?.targetUnit.replace(/\s*\(.*\)/, '') ?? '회'}`)
+        .join(', ')
+    : '';
+  const replay = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (startSelected(played.map((e) => e.id), item.scope ?? item.posture)) router.push('/exercise/play');
+  };
+
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.successLight }]}>
+      <View style={styles.cardLeft}>
+        <View style={styles.cardTop}>
+          <View style={[styles.statusBadge, styles.statusBadgeTop, { backgroundColor: colors.successLight }]}>
+            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+            <Text style={[styles.statusText, { color: colors.success }]}>완료</Text>
+            {item.perceived ? (
+              <Text style={[styles.statusText, { color: colors.textSecondary, marginLeft: 4 }]}>
+                · {PERCEIVED_LABEL[item.perceived]}
+              </Text>
+            ) : null}
+          </View>
+          {played.length > 0 ? (
+            <Pressable accessibilityRole="button" onPress={replay} hitSlop={10} style={styles.replay}>
+              <Text style={[styles.replayText, { color: colors.primary }]} numberOfLines={1}>
+                이 루틴으로 한번 더 운동하기
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <Text style={[styles.exerciseName, { color: colors.text }]} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={[styles.meta, { color: colors.textSecondary }]}>
+          {formatMonthDay(item.localDate)} {kstTime(item.startedAt)}
+        </Text>
+        <View style={styles.valueRow}>
+          <Ionicons name="trophy-outline" size={13} color={colors.accent} />
+          <Text style={[styles.valueText, { color: colors.text }]}>{item.creditedMin}분</Text>
+          {item.points !== undefined ? (
+            <Text style={[styles.posTag, { color: colors.primary, fontWeight: '700' }]}>· +{item.points} MOVE</Text>
+          ) : null}
+          {item.dropsEarned > 0 ? (
+            <Text style={[styles.posTag, { color: '#3B9AE1', fontWeight: '700' }]}>· 물방울 {item.dropsEarned}</Text>
+          ) : null}
+        </View>
+        {countText ? (
+          <Text style={[styles.memo, { color: colors.textSecondary, fontStyle: 'normal' }]} numberOfLines={2}>
+            {countText}
+          </Text>
+        ) : null}
+        {item.memo ? (
+          <Text style={[styles.memo, { color: colors.textSecondary }]} numberOfLines={1}>
+            {item.memo}
+          </Text>
+        ) : null}
+
+        {showAll ? (
+          <View style={[styles.exList, { borderTopColor: colors.border }]}>
+            {played.map((e, i) => (
+              <View key={e.id} style={styles.exItem}>
+                <Text style={[styles.exNum, { color: colors.accent }]}>{i + 1}</Text>
+                <Text style={[styles.exName, { color: colors.text }]}>{e.name}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {played.length > 1 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showAll }}
+            accessibilityLabel={showAll ? '운동 목록 접기' : '진행한 운동 모두 보기'}
+            onPress={() => setShowAll((v) => !v)}
+            hitSlop={10}
+            style={styles.more}
+          >
+            <Text style={[styles.moreText, { color: colors.textSecondary }]}>more</Text>
+            <Ionicons name={showAll ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textSecondary} />
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 function EmptyMove({ title, sub }: { title: string; sub?: string }) {
@@ -65,7 +204,7 @@ function EmptyMove({ title, sub }: { title: string; sub?: string }) {
           style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push('/exercise/position');
+            router.push('/exercise/videos');
           }}
         >
           <Ionicons name="flash" size={16} color="#FFF" />
@@ -108,20 +247,12 @@ function WeeklyStats({ sessions }: { sessions: Session[] }) {
         </View>
       ) : (
         <>
-          <View style={styles.statGrid}>
-            <StatBox label="완료 횟수" value={String(sum.count)} />
-            <StatBox label="운동한 날" value={`${sum.movedDays}일`} />
-            <StatBox label="운동 시간" value={sum.minutes > 0 ? `${sum.minutes}분` : '-'} />
-          </View>
-          <View style={[styles.statGrid, { marginTop: 8 }]}>
-            <StatBox label="획득 MOVE" value={String(sum.points)} />
-            <StatBox label="받은 물방울" value={`${drops}개`} />
-            <View style={{ flex: 1 }} />
-          </View>
+          <StatRow sum={sum} drops={drops} />
           <SectionLabel>체감 난이도별</SectionLabel>
           <PerceivedRow counts={perceivedCounts(sum.sessions)} />
           <SectionLabel>일별 운동 시간 (분)</SectionLabel>
           <BarChart values={minutes} labels={WEEK_LABELS} />
+          <TopExercises sessions={sum.sessions} />
         </>
       )}
     </ScrollView>
@@ -147,16 +278,7 @@ function MonthlyStats({ sessions }: { sessions: Session[] }) {
         onNext={() => setMonth(addMonths(month, 1))}
         nextDisabled={month >= current}
       />
-      <View style={styles.statGrid}>
-        <StatBox label="완료 횟수" value={String(sum.count)} />
-        <StatBox label="운동한 날" value={`${sum.movedDays}일`} />
-        <StatBox label="운동 시간" value={sum.minutes > 0 ? `${sum.minutes}분` : '-'} />
-      </View>
-      <View style={[styles.statGrid, { marginTop: 8 }]}>
-        <StatBox label="획득 MOVE" value={String(sum.points)} />
-        <StatBox label="받은 물방울" value={`${drops}개`} />
-        <View style={{ flex: 1 }} />
-      </View>
+      <StatRow sum={sum} drops={drops} />
       <SectionLabel>체감 난이도별</SectionLabel>
       <PerceivedRow counts={perceivedCounts(sum.sessions)} />
       {topTitle ? (
@@ -169,7 +291,7 @@ function MonthlyStats({ sessions }: { sessions: Session[] }) {
       ) : null}
       <SectionLabel>월간 활동</SectionLabel>
       <MonthGrid sessions={sessions} month={month} />
-      <View style={[styles.msgBox, { backgroundColor: colors.secondary }]}>
+      <View style={[styles.msgBox, { backgroundColor: '#EAF5EC' }]}>
         <Text style={[styles.msgText, { color: colors.text }]}>{monthlyMessage(sum.movedDays)}</Text>
       </View>
     </ScrollView>
@@ -187,7 +309,7 @@ export default function RecordsScreen() {
     const t = SEGMENTS.find((s) => s === params.tab);
     if (t) setSegment(t);
   }, [params.tab]);
-  const { sessions, photos } = useStore();
+  const { sessions } = useStore();
   const topPad = insets.top;
 
   const recent = useMemo(
@@ -195,66 +317,7 @@ export default function RecordsScreen() {
     [sessions],
   );
 
-  const renderItem = ({ item }: { item: Session }) => {
-    const photo = photos.find((p) => p.sessionId === item.id);
-    const countText = item.counts
-      ? Object.entries(item.counts)
-          .map(([id, n]) => `${exerciseById(id)?.name ?? ''} ${n}${exerciseById(id)?.targetUnit.replace(/\s*\(.*\)/, '') ?? '회'}`)
-          .join(', ')
-      : '';
-    return (
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.successLight }]}>
-        <View style={styles.cardLeft}>
-          <View style={[styles.statusBadge, { backgroundColor: colors.successLight }]}>
-            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-            <Text style={[styles.statusText, { color: colors.success }]}>완료</Text>
-            {item.perceived ? (
-              <Text style={[styles.statusText, { color: colors.textSecondary, marginLeft: 4 }]}>
-                · {PERCEIVED_LABEL[item.perceived]}
-              </Text>
-            ) : null}
-          </View>
-          <Text style={[styles.exerciseName, { color: colors.text }]} numberOfLines={1}>
-            {sessionTitle(item)}
-          </Text>
-          <Text style={[styles.meta, { color: colors.textSecondary }]}>
-            {formatMonthDay(item.localDate)} {kstTime(item.startedAt)}
-          </Text>
-          <View style={styles.valueRow}>
-            <Ionicons name="trophy-outline" size={13} color={colors.accent} />
-            <Text style={[styles.valueText, { color: colors.text }]}>{item.creditedMin}분</Text>
-            {item.points !== undefined ? (
-              <Text style={[styles.posTag, { color: colors.primary, fontWeight: '700' }]}>
-                · +{item.points} MOVE
-              </Text>
-            ) : null}
-            {item.dropsEarned > 0 ? (
-              <Text style={[styles.posTag, { color: '#3B9AE1', fontWeight: '700' }]}>· 물방울 {item.dropsEarned}</Text>
-            ) : null}
-          </View>
-          {countText ? (
-            <Text style={[styles.memo, { color: colors.textSecondary, fontStyle: 'normal' }]} numberOfLines={2}>
-              {countText}
-            </Text>
-          ) : null}
-          {item.memo ? (
-            <Text style={[styles.memo, { color: colors.textSecondary }]} numberOfLines={1}>
-              {item.memo}
-            </Text>
-          ) : null}
-        </View>
-        <View style={styles.cardRight}>
-          {photo ? (
-            <Image source={{ uri: photo.imageUri }} style={[styles.thumb, { borderColor: colors.border }]} />
-          ) : (
-            <View style={[styles.thumbEmpty, { backgroundColor: colors.muted }]}>
-              <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  };
+  const renderItem = ({ item }: { item: Session }) => <RecordCard item={item} />;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -297,7 +360,24 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800', marginBottom: 16 },
   statsWrap: { flex: 1, paddingHorizontal: 20 },
   statsScroll: { paddingBottom: 120 },
-  statGrid: { flexDirection: 'row', gap: 8 },
+  statGrid: { flexDirection: 'row', gap: 6 },
+  topCard: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 6 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52 },
+  rank: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rankText: { fontSize: 12, fontWeight: '800' },
+  topIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  topName: { flex: 1, fontSize: 14, fontWeight: '700' },
+  topCount: { fontSize: 14, fontWeight: '800' },
+  exList: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 10, paddingTop: 10, gap: 8 },
+  exItem: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  exNum: { width: 18, fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  exName: { flex: 1, fontSize: 14, fontWeight: '600' },
+  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+  statusBadgeTop: { marginBottom: 0 },
+  replay: { flexShrink: 1 },
+  replayText: { fontSize: 11, fontWeight: '700' },
+  more: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', gap: 2, minHeight: 24, marginTop: 8 },
+  moreText: { fontSize: 12, fontWeight: '700' },
   empty2: { alignItems: 'center', paddingTop: 24, gap: 10 },
   emptyTitle2: { fontSize: 15, fontWeight: '700', textAlign: 'center' },
   emptySub: { fontSize: 13, textAlign: 'center' },
@@ -318,7 +398,6 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 20 },
   card: { flexDirection: 'row', borderRadius: 14, borderWidth: 1.5, padding: 14, marginBottom: 12, gap: 12 },
   cardLeft: { flex: 1 },
-  cardRight: { alignItems: 'center', gap: 8 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -336,8 +415,6 @@ const styles = StyleSheet.create({
   valueText: { fontSize: 13, fontWeight: '700' },
   posTag: { fontSize: 12 },
   memo: { fontSize: 12, marginTop: 4, fontStyle: 'italic' },
-  thumb: { width: 64, height: 64, borderRadius: 10, borderWidth: 1 },
-  thumbEmpty: { width: 64, height: 64, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptyDesc: { fontSize: 14 },

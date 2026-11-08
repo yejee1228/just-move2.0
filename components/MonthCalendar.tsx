@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
-import { PeriodNav } from '@/components/StatsUI';
-import { addMonths, daysInMonth, formatKoMonth, monthStartKey, todayKey, weekdayOf, addDays } from '@/lib/date';
+import { addDays, daysInMonth, monthStartKey, todayKey, weekdayOf } from '@/lib/date';
 import { sessionCountsByDate } from '@/lib/stats';
 import type { Session } from '@/lib/types';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+const FIELD = '#DDF1E3';
+const LEAF = '#2F7D55';
 
 /**
- * 수정 전 월간 통계의 캘린더(357e0d7)와 같은 모양.
+ * 월간 활동 캘린더. 농장 화면처럼 흰 카드 안에 연두색 칸과 잎으로 표시한다.
  * 움직인 날만 칠하고(2회 이상이면 횟수), 쉰 날에는 아무 표시도 하지 않는다.
  */
 export function MonthGrid({ sessions, month }: { sessions: Session[]; month: string }) {
@@ -22,7 +24,7 @@ export function MonthGrid({ sessions, month }: { sessions: Session[]; month: str
   const cells = Math.ceil((lead + total) / 7) * 7;
 
   return (
-    <View>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.calHeader}>
         {WEEK.map((w) => (
           <Text key={w} style={[styles.calDayLabel, { color: colors.textSecondary }]}>
@@ -42,26 +44,31 @@ export function MonthGrid({ sessions, month }: { sessions: Session[]; month: str
             <View
               key={idx}
               accessibilityLabel={valid ? `${dayNum}일${active ? ` 운동 ${count}회` : ''}` : undefined}
-              style={[
-                styles.calCell,
-                active && { backgroundColor: colors.primary },
-                isToday && !active && { borderWidth: 1.5, borderColor: colors.primary },
-              ]}
+              style={styles.calCell}
             >
               {valid ? (
-                <>
+                <View
+                  style={[
+                    styles.calDay,
+                    active && { backgroundColor: FIELD },
+                    isToday && { borderWidth: 1.5, borderColor: colors.accent },
+                  ]}
+                >
                   <Text
                     style={[
                       styles.calDayNum,
-                      { color: active ? '#FFFFFF' : isToday ? colors.primary : colors.text },
+                      { color: active ? LEAF : colors.textSecondary },
+                      active && styles.calDayNumOn,
                     ]}
                   >
                     {dayNum}
                   </Text>
                   {count > 1 ? (
-                    <Text style={[styles.calCount, { color: 'rgba(255,255,255,0.8)' }]}>{count}</Text>
+                    <Text style={styles.calCount}>{count}회</Text>
+                  ) : active ? (
+                    <Ionicons name="leaf" size={9} color={LEAF} />
                   ) : null}
-                </>
+                </View>
               ) : null}
             </View>
           );
@@ -71,38 +78,14 @@ export function MonthGrid({ sessions, month }: { sessions: Session[]; month: str
   );
 }
 
-/** 홈에서 쓰는 캘린더: 달 이동 + 캘린더 (기본 카드 안) */
-export function MonthCalendar({ sessions }: { sessions: Session[] }) {
-  const colors = useColors();
-  const current = monthStartKey(todayKey());
-  const [month, setMonth] = useState(current);
-  return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <PeriodNav
-        big
-        label={formatKoMonth(month)}
-        onPrev={() => setMonth(addMonths(month, -1))}
-        onNext={() => setMonth(addMonths(month, 1))}
-        nextDisabled={month >= current}
-      />
-      <MonthGrid sessions={sessions} month={month} />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  card: { borderRadius: 14, borderWidth: 1, padding: 16 },
-  calHeader: { flexDirection: 'row', marginBottom: 4 },
+  card: { borderRadius: 20, borderWidth: 1, padding: 14 },
+  calHeader: { flexDirection: 'row', marginBottom: 8 },
   calDayLabel: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700' },
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calCell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 6,
-    marginBottom: 2,
-  },
-  calDayNum: { fontSize: 12, fontWeight: '600' },
-  calCount: { fontSize: 9, fontWeight: '700' },
+  calCell: { width: `${100 / 7}%`, aspectRatio: 1, padding: 2 },
+  calDay: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  calDayNum: { fontSize: 13, fontWeight: '500' },
+  calDayNumOn: { fontWeight: '800' },
+  calCount: { fontSize: 9, fontWeight: '800', color: LEAF },
 });

@@ -16,7 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { BottomBar, FlowHeader, POSTURE_ORDER, useLegacyPad } from '@/components/Legacy';
 import { Button } from '@/components/ui';
-import { EXERCISES, exerciseById } from '@/data/content';
+import { allExercises, exerciseById } from '@/data/content';
 import { addDays, todayKey } from '@/lib/date';
 import { POSTURE_LABEL, type Posture } from '@/lib/types';
 import { useStore } from '@/store/AppStore';
@@ -28,7 +28,6 @@ import { useStore } from '@/store/AppStore';
 const DATE_PRESETS = ['오늘', '내일', '직접 입력'];
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES_LIST = ['00', '10', '20', '30', '40', '50'];
-const PLANNED: (1 | 3 | 5)[] = [1, 3, 5];
 
 export default function ScheduleScreen() {
   const colors = useColors();
@@ -36,13 +35,12 @@ export default function ScheduleScreen() {
   const params = useLocalSearchParams<{ exerciseId?: string }>();
   const { addSchedule } = useStore();
 
-  const initial = exerciseById(params.exerciseId ?? '') ?? EXERCISES.find((e) => e.active)!;
+  const initial = exerciseById(params.exerciseId ?? '') ?? allExercises().find((e) => e.active)!;
   const [exId, setExId] = useState(initial.id);
   const [picking, setPicking] = useState(!params.exerciseId);
   const [pickPosture, setPickPosture] = useState<Posture>(initial.postures[0]);
   const ex = exerciseById(exId)!;
 
-  const [planned, setPlanned] = useState<1 | 3 | 5>(1);
   const [datePreset, setDatePreset] = useState<string>('오늘');
   const [customDate, setCustomDate] = useState('');
   const [hour, setHour] = useState('09');
@@ -78,7 +76,7 @@ export default function ScheduleScreen() {
     setError(null);
     const s = addSchedule({
       exerciseId: ex.id,
-      plannedMin: planned,
+      plannedMin: 1, // 모든 영상은 1분
       scheduledDate: date,
       scheduledTime: `${hour}:${minute}`,
       targetValue: Number(targetValue) || ex.targetValue,
@@ -139,7 +137,7 @@ export default function ScheduleScreen() {
                   </Pressable>
                 ))}
               </View>
-              {EXERCISES.filter((e) => e.active && e.postures.includes(pickPosture)).map((e) => (
+              {allExercises().filter((e) => e.active && e.postures.includes(pickPosture)).map((e) => (
                 <Pressable
                   key={e.id}
                   accessibilityRole="button"
@@ -152,23 +150,6 @@ export default function ScheduleScreen() {
               ))}
             </View>
           ) : null}
-
-          {/* 운동 시간 */}
-          <Text style={[styles.fieldLabel, { color: colors.text }]}>운동 시간</Text>
-          <View style={styles.presetRow}>
-            {PLANNED.map((m) => (
-              <Pressable
-                key={m}
-                style={[
-                  styles.presetBtn,
-                  { backgroundColor: planned === m ? colors.primary : colors.card, borderColor: planned === m ? colors.primary : colors.border },
-                ]}
-                onPress={() => setPlanned(m)}
-              >
-                <Text style={[styles.presetText, { color: planned === m ? '#FFFFFF' : colors.text }]}>{m}분</Text>
-              </Pressable>
-            ))}
-          </View>
 
           {/* 날짜 */}
           <Text style={[styles.fieldLabel, { color: colors.text }]}>날짜</Text>

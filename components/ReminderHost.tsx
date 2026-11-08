@@ -42,7 +42,7 @@ export function ReminderHost() {
 
   const check = useCallback(() => {
     if (!ready || message || scheduleAlert) return;
-    if (pathname.startsWith('/exercise/play')) return; // 운동 중에는 방해하지 않는다
+    if (pathname.startsWith('/exercise/play') || pathname.startsWith('/admin')) return; // 운동·관리 중에는 방해하지 않는다
     const now = Date.now();
     const today = dateKey(now);
     const minutes = new Date(now + 9 * 60 * 60 * 1000).getUTCMinutes();
@@ -102,7 +102,7 @@ export function ReminderHost() {
               const s = scheduleAlert;
               setScheduleAlert(null);
               if (!s || !alertEx) return;
-              startSession(alertEx.postures[0], s.plannedMin, alertEx.id);
+              if (!startSession(alertEx.id)) return;
               if (s.repeatType === 'once') updateSchedule(s.id, { status: 'completed' });
               router.push('/exercise/play');
             }}
@@ -120,7 +120,7 @@ export function ReminderHost() {
             variant="accent"
             onPress={() => {
               close();
-              router.push('/exercise/position');
+              router.push('/exercise/videos');
             }}
           />
           <Button

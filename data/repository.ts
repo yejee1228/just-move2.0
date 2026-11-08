@@ -1,15 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearMedia } from '@/data/media';
 import type { FarmState } from '@/lib/farm';
 import { initialFarm } from '@/lib/farm';
 import { appConfig } from '@/lib/config';
 import { todayKey } from '@/lib/date';
 import type {
+  AdVideo,
   AppSettings,
+  Exercise,
   InProgress,
   MessageHistory,
-  ProofPhoto,
   Schedule,
   Session,
+  VideoStat,
 } from '@/lib/types';
 
 /**
@@ -28,8 +31,12 @@ export interface UserData {
   inProgress: InProgress | null;
   /** 운동 예약 (수정 전 기능) */
   schedules: Schedule[];
-  /** 인증사진 (수정 전 기능) */
-  photos: ProofPhoto[];
+  /** 영상별 시청 기록 (맞춤 추천용) */
+  videoStats: Record<string, VideoStat>;
+  /** 관리자가 올리거나 수정한 운동 영상 */
+  customVideos: Exercise[];
+  /** 관리자가 올린 광고 영상 */
+  ads: AdVideo[];
 }
 
 export interface Repository {
@@ -41,7 +48,9 @@ export interface Repository {
   saveHistory(history: MessageHistory): Promise<void>;
   saveInProgress(inProgress: InProgress | null): Promise<void>;
   saveSchedules(schedules: Schedule[]): Promise<void>;
-  savePhotos(photos: ProofPhoto[]): Promise<void>;
+  saveVideoStats(videoStats: Record<string, VideoStat>): Promise<void>;
+  saveCustomVideos(customVideos: Exercise[]): Promise<void>;
+  saveAds(ads: AdVideo[]): Promise<void>;
   /** 모든 기기 데이터 삭제 (개발·탈퇴용) */
   clear(): Promise<void>;
 }
@@ -54,7 +63,11 @@ const KEY = {
   history: 'jm2.history',
   inProgress: 'jm2.inProgress',
   schedules: 'jm2.schedules',
+  /** 없앤 인증사진 기능이 남긴 데이터 (불러오지 않고, 전체 삭제 때만 함께 지운다) */
   photos: 'jm2.photos',
+  videoStats: 'jm2.videoStats',
+  customVideos: 'jm2.customVideos',
+  ads: 'jm2.ads',
 } as const;
 
 export function defaultSettings(now: number = Date.now()): AppSettings {
@@ -88,7 +101,7 @@ async function writeJson(key: string, value: unknown): Promise<void> {
 
 export const localRepository: Repository = {
   async load() {
-    const [sessions, progress, farm, settings, history, inProgress, schedules, photos] = await Promise.all([
+    const [sessions, progress, farm, settings, history, inProgress, schedules, videoStats, customVideos, ads] = await Promise.all([
       readJson<Session[]>(KEY.sessions, []),
       readJson<Record<string, number>>(KEY.progress, {}),
       readJson<FarmState>(KEY.farm, initialFarm),
@@ -96,11 +109,13 @@ export const localRepository: Repository = {
       readJson<MessageHistory>(KEY.history, { welcome: [], notification: [] }),
       readJson<InProgress | null>(KEY.inProgress, null),
       readJson<Schedule[]>(KEY.schedules, []),
-      readJson<ProofPhoto[]>(KEY.photos, []),
+      readJson<Record<string, VideoStat>>(KEY.videoStats, {}),
+      readJson<Exercise[]>(KEY.customVideos, []),
+      readJson<AdVideo[]>(KEY.ads, []),
     ]);
     const merged = { ...defaultSettings(), ...(settings ?? {}) };
     if (!settings) await writeJson(KEY.settings, merged);
-    return { sessions, progress, farm, settings: merged, history, inProgress, schedules, photos };
+    return { sessions, progress, farm, settings: merged, history, inProgress, schedules, videoStats, customVideos, ads };
   },
   saveSessions: (v) => writeJson(KEY.sessions, v),
   saveProgress: (v) => writeJson(KEY.progress, v),
@@ -108,7 +123,9 @@ export const localRepository: Repository = {
   saveSettings: (v) => writeJson(KEY.settings, v),
   saveHistory: (v) => writeJson(KEY.history, v),
   saveSchedules: (v) => writeJson(KEY.schedules, v),
-  savePhotos: (v) => writeJson(KEY.photos, v),
+  saveVideoStats: (v) => writeJson(KEY.videoStats, v),
+  saveCustomVideos: (v) => writeJson(KEY.customVideos, v),
+  saveAds: (v) => writeJson(KEY.ads, v),
   async saveInProgress(v) {
     if (v === null) {
       try {
@@ -123,6 +140,7 @@ export const localRepository: Repository = {
   async clear() {
     try {
       await AsyncStorage.multiRemove(Object.values(KEY));
+      await clearMedia();
     } catch {
       // 무시
     }

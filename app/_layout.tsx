@@ -25,17 +25,18 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="welcome" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="exercise/position" options={{ headerShown: false }} />
-      <Stack.Screen name="exercise/time" options={{ headerShown: false }} />
+      <Stack.Screen name="exercise/videos" options={{ headerShown: false }} />
       <Stack.Screen name="exercise/play" options={{ headerShown: false }} />
       <Stack.Screen name="exercise/complete" options={{ headerShown: false }} />
-      <Stack.Screen name="exercise/photo" options={{ headerShown: false }} />
       <Stack.Screen name="schedule" options={{ headerShown: false }} />
       <Stack.Screen name="my/schedules" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="my/notifications" options={{ headerShown: false }} />
       <Stack.Screen name="my/account" options={{ headerShown: false }} />
       <Stack.Screen name="dev/metrics" options={{ headerShown: false }} />
+      <Stack.Screen name="admin/index" options={{ headerShown: false }} />
+      <Stack.Screen name="admin/ads" options={{ headerShown: false }} />
+      <Stack.Screen name="admin/report" options={{ headerShown: false }} />
     </Stack>
   );
 }

@@ -59,16 +59,22 @@ export function recentSessions(sessions: Session[], n: number): Session[] {
     .slice(0, n);
 }
 
-/** 가장 많이 한 동작 id */
-export function mostPlayedExercise(sessions: Session[]): string | null {
+/** 많이 한 동작 순서 (30초 이상 본 것만 센다) */
+export function topExercises(sessions: Session[]): { id: string; count: number }[] {
   const count: Record<string, number> = {};
   for (const s of countedSessions(sessions)) {
     for (const it of s.items) {
       if (!it.skipped && it.playedSec >= 30) count[it.exerciseId] = (count[it.exerciseId] ?? 0) + 1;
     }
   }
-  const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
-  return top ? top[0] : null;
+  return Object.entries(count)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, n]) => ({ id, count: n }));
+}
+
+/** 가장 많이 한 동작 id */
+export function mostPlayedExercise(sessions: Session[]): string | null {
+  return topExercises(sessions)[0]?.id ?? null;
 }
 
 /** 체감 난이도 분포 (선택한 기록만) */

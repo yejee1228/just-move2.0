@@ -11,20 +11,27 @@ import { PERCEIVED_LABEL, type Perceived } from '@/lib/types';
 
 type Colors = ReturnType<typeof useColors>;
 
-export function StatBox({ label, value }: { label: string; value: string }) {
+export function StatBox({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
   const colors = useColors();
   return (
-    <View style={[statBox.box, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[statBox.val, { color: colors.primary }]}>{value}</Text>
-      <Text style={[statBox.lbl, { color: colors.textSecondary }]}>{label}</Text>
+    <View style={[statBox.box, compact && statBox.boxCompact, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[statBox.val, compact && statBox.valCompact, { color: colors.primary }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={[statBox.lbl, compact && statBox.lblCompact, { color: colors.textSecondary }]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
 
 const statBox = StyleSheet.create({
   box: { flex: 1, alignItems: 'center', borderRadius: 10, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 4 },
+  boxCompact: { borderRadius: 12, paddingVertical: 12, paddingHorizontal: 2 },
   val: { fontSize: 20, fontWeight: '800' },
+  valCompact: { fontSize: 15 },
   lbl: { fontSize: 11, marginTop: 2, textAlign: 'center' },
+  lblCompact: { fontSize: 10 },
 });
 
 export const PERCEIVED_COLORS = (colors: Colors): Record<Perceived, { bg: string; fg: string }> => ({

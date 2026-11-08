@@ -7,11 +7,16 @@ import { useColors } from '@/hooks/useColors';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { BottomBar, FlowHeader } from '@/components/Legacy';
 import VideoSurface from '@/components/VideoSurface';
-import { publicPath } from '@/lib/assets';
-import { exerciseById } from '@/data/content';
+import { AdPlayer } from '@/components/AdPlayer';
+import { useMediaUrl } from '@/hooks/useMediaUrl';
+import { isAdLive } from '@/lib/adReport';
+import { todayKey } from '@/lib/date';
+import { exerciseById, videoSecOf } from '@/data/content';
 import { appConfig } from '@/lib/config';
+import { creditedMinutes, dropsToGrant } from '@/lib/session';
+import { dropsOnDate } from '@/lib/stats';
 import { useStore } from '@/store/AppStore';
-import type { InProgress } from '@/lib/types';
+import type { AdVideo, InProgress } from '@/lib/types';
 
 const SAVE_EVERY_MS = 5000;
 const TICK_MS = 250;
@@ -30,7 +35,7 @@ function totalPlayed(cur: InProgress): number {
 
 export default function PlayScreen() {
   const colors = useColors();
-  const { ready, inProgress, saveProgress, replaceCurrentSlot, finishSession } = useStore();
+  const { ready, inProgress, sessions, ads, saveProgress, finishSession, recordView, recordAdView, recordAdClick } = useStore();
 
   const curRef = useRef<InProgress | null>(inProgress);
   const [, rerender] = useReducer((x: number) => x + 1, 0);
@@ -41,6 +46,9 @@ export default function PlayScreen() {
   const finishedRef = useRef(false);
   const lastTick = useRef(Date.now());
   const [area, setArea] = useState<{ w: number; h: number } | null>(null);
+  const [ad, setAd] = useState<AdVideo | null>(null); // 지금 재생 중인 광고
+  const adsRef = useRef(ads);
+  adsRef.current = ads;
 
   // 새로고침 등으로 늦게 불러온 경우
   useEffect(() => {
@@ -58,7 +66,10 @@ export default function PlayScreen() {
 
   const cur = curRef.current;
   const exercise = cur ? exerciseById(cur.playlist[cur.slotIndex]) : undefined;
-  const active = !paused && (failed || videoActive);
+  // 영상 길이: 파일에서 확인한 실제 길이 → 목록에 적힌 길이 → 기본 1분 (모든 영상은 1분 이상)
+  const videoLen = (cur && cur.slotVideoSec?.[cur.slotIndex]) || videoSecOf(exercise);
+  const media = useMediaUrl(exercise?.video);
+  const active = !paused && !ad && (failed || videoActive);
   const activeRef = useRef(active);
   activeRef.current = active;
   useWakeLock(!!cur && !paused);
@@ -94,9 +105,43 @@ export default function PlayScreen() {
   const advance = useCallback(() => {
     const c = curRef.current;
     if (!c || finishedRef.current) return;
-    if (c.slotIndex >= c.playlist.length - 1) finish();
-    else goToSlot(c.slotIndex + 1);
-  }, [finish, goToSlot]);
+    if (c.slotIndex >= c.playlist.length - 1) {
+      finish();
+      return;
+    }
+    // 계획된 자리면 다음 영상으로 넘어가기 전에 광고를 한 번 보여 준다
+    const adId = c.adPlan?.[c.slotIndex];
+    const nextAd =
+      adId && !c.adsShown?.includes(c.slotIndex) ? adsRef.current.find((a) => a.id === adId && isAdLive(a, todayKey())) : undefined;
+    if (nextAd) {
+      curRef.current = { ...c, adsShown: [...(c.adsShown ?? []), c.slotIndex] };
+      setVideoActive(false);
+      persist();
+      setAd(nextAd);
+      return;
+    }
+    goToSlot(c.slotIndex + 1);
+  }, [finish, goToSlot, persist]);
+
+  const endAd = useCallback(() => {
+    const c = curRef.current;
+    setAd(null);
+    if (c) goToSlot(c.slotIndex + 1);
+  }, [goToSlot]);
+
+  // 조회수: 슬롯마다 재생을 시작할 때 한 번만 센다
+  const viewedKey = useRef<string | null>(null);
+  const slotKey = cur && exercise ? `${cur.id}:${cur.slotIndex}` : null;
+  useEffect(() => {
+    if (!slotKey || !exercise || viewedKey.current === slotKey) return;
+    viewedKey.current = slotKey;
+    recordView(exercise.id);
+  }, [slotKey, exercise, recordView]);
+
+  // 관리자가 삭제한 영상이 목록에 남아 있으면 건너뛴다
+  useEffect(() => {
+    if (cur && !exercise) advance();
+  }, [cur, exercise, advance]);
 
   // 재생 시간 측정: 영상이 실제로 재생 중일 때만 쌓는다
   useEffect(() => {
@@ -115,8 +160,18 @@ export default function PlayScreen() {
 
   // 임시 재생 모드는 영상 길이만큼 흐르면 다음으로
   useEffect(() => {
-    if (failed && position >= appConfig.videoSec) advance();
-  }, [failed, position, advance]);
+    if (failed && position >= videoLen) advance();
+  }, [failed, position, videoLen, advance]);
+
+  const onDuration = useCallback((sec: number) => {
+    const c = curRef.current;
+    if (!c) return;
+    const lens = c.slotVideoSec ? [...c.slotVideoSec] : c.playlist.map(() => null);
+    if (lens[c.slotIndex] === sec) return;
+    lens[c.slotIndex] = sec;
+    curRef.current = { ...c, slotVideoSec: lens };
+    rerender();
+  }, []);
 
   // 중간 저장 + 화면을 떠날 때 저장
   useEffect(() => {
@@ -149,11 +204,7 @@ export default function PlayScreen() {
   const onNext = () => {
     if (!cur) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    curRef.current = replaceCurrentSlot({ ...cur, slotPlayedSec: [...cur.slotPlayedSec] });
-    setPosition(0);
-    setFailed(false);
-    setVideoActive(false);
-    rerender();
+    advance();
   };
 
   const failedRef = useRef(false);
@@ -167,11 +218,23 @@ export default function PlayScreen() {
     setPaused(false);
   }, []);
 
+  useEffect(() => {
+    if (media.status === 'missing') onFail();
+  }, [media.status, exercise?.id, onFail]);
+
+  if (ad) return <AdPlayer ad={ad} onShown={recordAdView} onClick={recordAdClick} onDone={endAd} />;
+
   if (!cur || !exercise) {
     return <View style={[styles.container, { backgroundColor: colors.background }]} />;
   }
 
-  const remaining = cur.plannedMin * 60 - totalPlayed(cur);
+  const remaining = videoLen - position;
+  // 1분 이상 보면 이번 운동에 물방울 1개 (하루 최대 dropDailyLimit개)
+  const dropsNow = dropsToGrant(
+    creditedMinutes(totalPlayed(cur)),
+    dropsOnDate(sessions, cur.localDate),
+    appConfig.dropDailyLimit,
+  );
   const portrait = exercise.orientation === 'portrait';
   const ratio = portrait ? 9 / 16 : 16 / 9;
   const boxSize = (() => {
@@ -219,14 +282,15 @@ export default function PlayScreen() {
           style={[styles.videoBox, boxSize]}
         >
           {!failed ? (
-            <VideoSurface
-              src={publicPath(exercise.video)}
+            media.src ? <VideoSurface
+              src={media.src}
               playing={!paused}
               onActiveChange={setVideoActive}
               onEnded={advance}
               onFail={onFail}
               onBlocked={onBlocked}
-            />
+              onDuration={onDuration}
+            /> : null
           ) : (
             <View style={styles.placeholder}>
               <Ionicons name="play-circle-outline" size={48} color="#FFFFFF" />
@@ -247,7 +311,7 @@ export default function PlayScreen() {
         <View
           style={[
             styles.progressFill,
-            { width: `${Math.min(100, (position / appConfig.videoSec) * 100)}%`, backgroundColor: colors.accent },
+            { width: `${Math.min(100, (position / videoLen) * 100)}%`, backgroundColor: colors.accent },
           ]}
         />
       </View>
@@ -269,9 +333,9 @@ export default function PlayScreen() {
           </View>
           <View style={[styles.goalDivider, { backgroundColor: colors.border }]} />
           <View style={styles.goalItem}>
-            <Text style={[styles.goalLabel, { color: colors.textSecondary }]}>부위</Text>
-            <Text style={[styles.goalValue, { color: colors.text }]} numberOfLines={1}>
-              {exercise.bodyPart}
+            <Text style={[styles.goalLabel, { color: colors.textSecondary }]}>모은 물방울</Text>
+            <Text style={[styles.goalValue, { color: '#3B9AE1' }]} numberOfLines={1}>
+              +{dropsNow}
             </Text>
           </View>
         </View>
@@ -307,11 +371,11 @@ export default function PlayScreen() {
         ) : null}
       </View>
 
-      {/* 하단 바: 이전 동작 / 그만하기 / 다음 동작 */}
+      {/* 하단 바: 이전 영상 / 그만하기 / 다음 영상 (그리드 순서대로) */}
       <BottomBar>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="이전 동작"
+          accessibilityLabel="이전 영상"
           onPress={onPrev}
           disabled={cur.slotIndex === 0}
           style={({ pressed }) => [
@@ -320,7 +384,7 @@ export default function PlayScreen() {
           ]}
         >
           <Ionicons name="play-skip-back" size={18} color={colors.primary} />
-          <Text style={[styles.sideBtnText, { color: colors.primary }]}>이전 동작</Text>
+          <Text style={[styles.sideBtnText, { color: colors.primary }]}>이전 영상</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -336,12 +400,12 @@ export default function PlayScreen() {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="다음 동작"
+          accessibilityLabel="다음 영상"
           onPress={onNext}
           style={({ pressed }) => [styles.sideBtn, { borderColor: colors.primary, opacity: pressed ? 0.85 : 1 }]}
         >
           <Ionicons name="play-skip-forward" size={18} color={colors.primary} />
-          <Text style={[styles.sideBtnText, { color: colors.primary }]}>다음 동작</Text>
+          <Text style={[styles.sideBtnText, { color: colors.primary }]}>다음 영상</Text>
         </Pressable>
       </BottomBar>
     </View>

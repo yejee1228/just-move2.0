@@ -26,6 +26,10 @@ export interface Exercise {
   /** public/videos 아래 파일 경로 (예: /videos/lying-01.mp4). 파일이 없으면 임시 재생 모드 */
   video: string;
   orientation: 'portrait' | 'landscape';
+  /** 썸네일 ('idb:키' = 관리자가 올린 이미지). 없으면 자세 아이콘 */
+  thumbnail?: string;
+  /** 영상 길이(초). 모든 영상은 1분 이상. 비워 두면 기본 1분으로 보고, 재생할 때 파일의 실제 길이를 쓴다 */
+  durationSec?: number;
   isFirst: boolean;
   active: boolean;
   /** 수정 전 운동 데이터에서 이어받은 필드 */
@@ -35,10 +39,48 @@ export interface Exercise {
   caution: string;
 }
 
+/**
+ * 영상별 시청 기록 — 맞춤 추천(바둑판 순서)의 재료.
+ * picks: 바둑판에서 직접 고른 횟수, completes: 끝까지 본 횟수, quits: 중간에 넘기거나 멈춘 횟수
+ */
+export interface VideoStat {
+  picks: number;
+  plays: number;
+  completes: number;
+  quits: number;
+  /** 조회수: 영상이 재생을 시작한 횟수 */
+  views?: number;
+  /** 하트(좋아요)를 눌렀는지 */
+  liked?: boolean;
+  lastPlayedAt?: string;
+}
+
+/** 영상 사이에 나오는 광고 (관리자 등록) */
+export interface AdVideo {
+  id: string;
+  title: string;
+  advertiser: string;
+  linkUrl?: string;
+  /** 'idb:키' = 관리자가 올린 영상 */
+  video: string;
+  durationSec?: number;
+  /** 게시 기간 (한국시간 YYYY-MM-DD, 양 끝 날짜 포함) */
+  startDate: string;
+  endDate: string;
+  /** 몇 초 뒤 건너뛸 수 있는지. null이면 끝까지 봐야 한다 */
+  skipAfterSec: number | null;
+  active: boolean;
+  /** 날짜별 결과: 노출·[자세히 보기] 클릭 횟수 */
+  stats: Record<string, { views: number; clicks: number }>;
+  createdAt: string;
+}
+
 export interface SessionItem {
   exerciseId: string;
   playedSec: number;
   skipped: boolean;
+  /** 재생할 때 확인한 영상 길이(초). 끝까지 봤는지 판정에 쓴다 */
+  videoSec?: number;
 }
 
 /** 저장된 운동 1회 */
@@ -47,10 +89,15 @@ export interface Session {
   startedAt: string; // ISO
   localDate: string; // KST YYYY-MM-DD
   posture: Posture;
-  plannedMin: 1 | 3 | 5;
+  /** 바둑판에서 보던 자세 범위 ([계속 운동하기]의 추천 범위) */
+  scope?: Posture | 'all';
+  /** 예전 1·3·5분 선택 방식의 기록에만 있다 */
+  plannedMin?: 1 | 3 | 5;
   actualSec: number;
-  creditedMin: 0 | 1 | 3 | 5;
+  /** 인정 시간(분) = 실제 시청 시간을 1분 단위로 내린 값 */
+  creditedMin: number;
   dropsEarned: number;
+  /** 체감 난이도 (완료 화면 선택 입력) */
   perceived?: Perceived;
   items: SessionItem[];
   /** MOVE 포인트 (기록 시점에 계산) */
@@ -75,14 +122,6 @@ export interface Schedule {
   createdAt: string;
 }
 
-/** 인증사진 (수정 전 기능, 기기에만 저장) */
-export interface ProofPhoto {
-  id: string;
-  sessionId: string;
-  imageUri: string;
-  capturedAt: string;
-  memo?: string;
-}
 
 /** 영상 재생 중인 세션 (중간 저장용) */
 export interface InProgress {
@@ -90,12 +129,18 @@ export interface InProgress {
   startedAt: string;
   localDate: string;
   posture: Posture;
-  plannedMin: 1 | 3 | 5;
-  /** 슬롯별 현재 동작 id */
+  scope?: Posture | 'all';
+  /** 슬롯 번호별로 그 영상 뒤에 나올 광고 id */
+  adPlan?: Record<number, string>;
+  /** 이미 광고를 보여 준 슬롯 번호 */
+  adsShown?: number[];
+  /** 차례로 이어서 볼 영상 id (최대 playlistMax개) */
   playlist: string[];
   slotIndex: number;
   /** 슬롯별 재생 초 / 건너뜀 */
   slotPlayedSec: number[];
+  /** 슬롯별 영상의 실제 길이(초). 파일을 불러와 알게 된 것만 */
+  slotVideoSec?: (number | null)[];
   /** 건너뛰기로 교체되어 밀려난 동작의 재생 기록 */
   extraItems: SessionItem[];
   updatedAt: string;

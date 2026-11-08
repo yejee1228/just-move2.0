@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { Button, useScreenPad } from '@/components/ui';
 import { Crop, Tomato } from '@/components/Crop';
+import { TipArt } from '@/components/TipArt';
 import { TIP_CARDS, type TipCard } from '@/data/content';
 import { appConfig } from '@/lib/config';
 import { useStore } from '@/store/AppStore';
@@ -84,7 +85,7 @@ export default function FarmScreen() {
         {canWater ? (
           <Button label="물주기" icon="water" onPress={water} style={styles.waterBtn} />
         ) : (
-          <Button label="운동하러 가기" variant="accent" onPress={() => router.push('/exercise/position')} />
+          <Button label="운동하러 가기" variant="accent" onPress={() => router.push('/exercise/videos')} />
         )}
 
         <Text style={[styles.section, { color: colors.text }]}>작물 바구니</Text>
@@ -164,18 +165,32 @@ export default function FarmScreen() {
         </View>
       </Modal>
 
-      <Modal visible={openTip !== null} transparent animationType="slide" onRequestClose={() => setOpenTip(null)}>
+      <Modal visible={openTip !== null} transparent animationType="fade" onRequestClose={() => setOpenTip(null)}>
         <View style={styles.modalBack}>
-          <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: pad.bottom + 20 }]}>
-            {openTip ? (
-              <>
-                <Text style={[styles.sub, { color: colors.textSecondary }]}>{TIP_TYPE_LABEL[openTip.type]}</Text>
-                <Text style={[styles.modalTitle, { color: colors.text, textAlign: 'left' }]}>{openTip.title}</Text>
-                <Text style={[styles.body, { color: colors.text }]}>{openTip.body}</Text>
-              </>
-            ) : null}
-            <Button label="닫기" variant="outline" onPress={() => setOpenTip(null)} />
-          </View>
+          <Pressable accessibilityLabel="팁 카드 닫기" onPress={() => setOpenTip(null)} style={StyleSheet.absoluteFill} />
+          {openTip ? (
+            <View style={[styles.tipModal, { backgroundColor: colors.card }]}>
+              <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+                <View style={styles.tipArt} accessibilityRole="image" accessibilityLabel={`${openTip.title} 그림`}>
+                  <TipArt tip={openTip} />
+                </View>
+                <View style={styles.tipContent}>
+                  <View
+                    style={[
+                      styles.tipBadge,
+                      styles.tipModalBadge,
+                      { backgroundColor: openTip.type === 'recipe' ? '#FDEBD2' : '#E1F1FB' },
+                    ]}
+                  >
+                    <Text style={[styles.tipBadgeText, { color: colors.text }]}>{TIP_TYPE_LABEL[openTip.type]}</Text>
+                  </View>
+                  <Text style={[styles.tipModalTitle, { color: colors.text }]}>{openTip.title}</Text>
+                  <Text style={[styles.body, { color: colors.text }]}>{openTip.body}</Text>
+                  <Button label="닫기" variant="outline" onPress={() => setOpenTip(null)} style={styles.tipClose} />
+                </View>
+              </ScrollView>
+            </View>
+          ) : null}
         </View>
       </Modal>
     </View>
@@ -205,6 +220,11 @@ const styles = StyleSheet.create({
   modal: { borderRadius: 24, padding: 24, alignItems: 'stretch', gap: 12 },
   modalTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
   newTip: { borderRadius: 14, padding: 14, gap: 4 },
-  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12 },
+  tipModal: { width: '100%', maxWidth: 400, maxHeight: '90%', alignSelf: 'center', borderRadius: 24, overflow: 'hidden' },
+  tipArt: { width: '100%', aspectRatio: 16 / 9 },
+  tipContent: { padding: 22, gap: 10 },
+  tipModalBadge: { alignSelf: 'flex-start' },
+  tipModalTitle: { fontSize: 22, fontWeight: '800', lineHeight: 30 },
+  tipClose: { marginTop: 8 },
   body: { fontSize: 16, lineHeight: 25 },
 });
