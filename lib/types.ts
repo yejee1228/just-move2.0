@@ -21,6 +21,8 @@ export interface Exercise {
   name: string;
   description: string;
   postures: Posture[];
+  /** 부위 (선택 입력) */
+  bodyPart?: string;
   carOk: boolean;
   /** public/videos 아래 파일 경로 (예: /videos/lying-01.mp4). 파일이 없으면 임시 재생 모드 */
   video: string;
@@ -35,6 +37,9 @@ export interface Exercise {
   deleted?: boolean;
   /** 수정 전 운동 데이터에서 이어받은 필드 */
   difficulty: Difficulty;
+  /** 목표 값·단위 (선택 입력). 값이 있을 때만 화면에 보여 준다 */
+  targetValue?: number;
+  targetUnit?: string;
   caution: string;
 }
 
@@ -118,6 +123,8 @@ export interface Schedule {
   plannedMin: 1 | 3 | 5;
   scheduledDate: string; // YYYY-MM-DD
   scheduledTime: string; // HH:MM
+  /** 목표량. 목표가 있는 운동을 예약했을 때만 있다 */
+  targetValue?: number;
   repeatType: 'once' | 'daily';
   status: 'scheduled' | 'completed' | 'cancelled';
   /** 마지막으로 알림을 띄운 날짜 (매일 반복용) */

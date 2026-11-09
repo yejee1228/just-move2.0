@@ -13,7 +13,7 @@ import { useMediaUrl } from '@/hooks/useMediaUrl';
 import { isAdLive } from '@/lib/adReport';
 import { bannerForSlot, isBannerAd } from '@/lib/ads';
 import { todayKey } from '@/lib/date';
-import { exerciseById, videoSecOf } from '@/data/content';
+import { exerciseById, targetText, videoSecOf } from '@/data/content';
 import { appConfig } from '@/lib/config';
 import { dropsToGrant, playsEarningDrop } from '@/lib/session';
 import { dropsOnDate } from '@/lib/stats';
@@ -257,6 +257,7 @@ export default function PlayScreen() {
 
   const remaining = videoLen - position;
   const today = todayKey();
+  const target = targetText(exercise);
   const repeatCount = cur.slotRepeats?.[cur.slotIndex] ?? 1;
   // 지금 보고 있는 회차를 포함한 남은 재생 횟수
   const repeatsLeft = Math.max(1, repeatCount - (cur.slotLaps?.[cur.slotIndex]?.length ?? 0));
@@ -381,7 +382,18 @@ export default function PlayScreen() {
 
       {/* 정보 영역: 남은 횟수 / 남은 시간 / 모은 물방울 줄 + 안내 상자 */}
       <View style={styles.infoArea}>
-        <View style={[styles.goalRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.goalRow, target ? styles.goalRowTight : null, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {target ? (
+            <>
+              <View style={styles.goalItem}>
+                <Text style={[styles.goalLabel, { color: colors.textSecondary }]}>목표</Text>
+                <Text style={[styles.goalValue, styles.goalValueSmall, { color: colors.text }]} numberOfLines={1}>
+                  {target}
+                </Text>
+              </View>
+              <View style={[styles.goalDivider, { backgroundColor: colors.border }]} />
+            </>
+          ) : null}
           <View style={styles.goalItem}>
             <Text style={[styles.goalLabel, { color: colors.textSecondary }]}>남은 횟수</Text>
             <Text style={[styles.goalValue, { color: colors.text }]}>{repeatsLeft}회</Text>
@@ -529,9 +541,11 @@ const styles = StyleSheet.create({
   progressFill: { height: 4 },
   infoArea: { padding: 20, gap: 12 },
   goalRow: { flexDirection: 'row', borderRadius: 12, borderWidth: 1, padding: 16, alignItems: 'center' },
+  goalRowTight: { paddingHorizontal: 8 },
   goalItem: { flex: 1, alignItems: 'center' },
   goalLabel: { fontSize: 11, fontWeight: '600', marginBottom: 4 },
   goalValue: { fontSize: 16, fontWeight: '700' },
+  goalValueSmall: { fontSize: 13, lineHeight: 20 },
   goalDivider: { width: 1, height: 32 },
   carBadge: {
     flexDirection: 'row',

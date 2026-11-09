@@ -108,6 +108,20 @@ export default function FarmScreen() {
           )}
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="상점 가기"
+          onPress={() => router.push('/shop')}
+          style={({ pressed }) => [styles.shopLink, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.85 : 1 }]}
+        >
+          <Ionicons name="storefront-outline" size={24} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.tipTitle, { color: colors.text }]}>상점</Text>
+            <Text style={[styles.sub, { color: colors.textSecondary }]}>방울토마토로 실제 상품을 구입해요</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+        </Pressable>
+
         <Text style={[styles.section, { color: colors.text }]}>팁 카드</Text>
         {unlocked.length === 0 ? (
           <Text style={[styles.sub, { color: colors.textSecondary }]}>
@@ -212,6 +226,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 18, fontWeight: '800', marginTop: 8 },
   basket: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 10 },
   tomatoes: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  shopLink: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 16 },
   tip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, padding: 14 },
   tipBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   tipBadgeText: { fontSize: 12, fontWeight: '700' },

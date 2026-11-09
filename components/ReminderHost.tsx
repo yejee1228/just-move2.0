@@ -92,7 +92,7 @@ export function ReminderHost() {
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Text style={[styles.title, { color: colors.text }]}>운동 시간이에요!</Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            {alertEx?.name} 예약한 시간이 됐어요.
+            {alertEx?.name}{scheduleAlert?.targetValue != null ? ` ${scheduleAlert.targetValue}${alertEx?.targetUnit ?? ''}` : ''} 예약한 시간이 됐어요.
           </Text>
           <Button
             label="지금 시작"

@@ -1,6 +1,7 @@
 import adsJson from './ads.json';
 import exercisesJson from './exercises.json';
 import messagesJson from './messages.json';
+import shopJson from './shop.json';
 import tipsJson from './tips.json';
 import { appConfig } from '@/lib/config';
 import type { AdVideo, Exercise } from '@/lib/types';
@@ -38,6 +39,16 @@ export interface TipCard {
 }
 export const TIP_CARDS = tipsJson as TipCard[];
 
+/** 상점 샘플 상품. price는 필요한 방울토마토 개수 */
+export interface ShopProduct {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  art: 'water' | 'tomato';
+}
+export const SHOP_PRODUCTS = shopJson as ShopProduct[];
+
 /** 기본 운동 목록 + 관리자가 올리거나 수정한 영상 (같은 id면 관리자 내용이 우선) */
 export function mergeCatalog(custom: Exercise[]): Exercise[] {
   const byId = new Map(custom.map((e) => [e.id, e]));
@@ -65,4 +76,8 @@ export const allExercises = (): Exercise[] => catalog;
 export const exerciseById = (id: string): Exercise | undefined => catalog.find((e) => e.id === id);
 
 /** 영상 길이(초). 목록에 적힌 길이, 없으면 설정의 기본 길이(1분) */
+/** 화면에 보여 줄 목표 (예: 10회). 목표 값이 없으면 null */
+export const targetText = (ex: Pick<Exercise, 'targetValue' | 'targetUnit'> | undefined, value = ex?.targetValue): string | null =>
+  value != null ? `${value}${ex?.targetUnit ?? ''}` : null;
+
 export const videoSecOf = (ex: Exercise | undefined): number => ex?.durationSec ?? appConfig.videoSec;

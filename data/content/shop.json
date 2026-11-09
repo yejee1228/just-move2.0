@@ -1,0 +1,16 @@
+[
+  {
+    "id": "deep-sea-water",
+    "name": "해양심층수",
+    "description": "운동 후 시원하게 마시는 한 병",
+    "price": 10,
+    "art": "water"
+  },
+  {
+    "id": "tomato-pack",
+    "name": "방울토마토 한팩",
+    "description": "농장에서 키운 것처럼 싱싱한 한 팩",
+    "price": 20,
+    "art": "tomato"
+  }
+]

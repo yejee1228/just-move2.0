@@ -10,6 +10,7 @@ import {
   DoneNote,
   Drawer,
   Field,
+  FieldRow,
   FilePick,
   FormError,
   Input,
@@ -43,6 +44,7 @@ const COLUMNS: Column[] = [
   { label: '썸네일', width: 64 },
   { label: '동작 이름', flex: 2.4 },
   { label: '자세', flex: 1 },
+  { label: '부위', width: 72 },
   { label: '길이', width: 56 },
   { label: '구분', width: 90 },
   { label: '상태', width: 68 },
@@ -55,11 +57,14 @@ interface Form {
   name: string;
   description: string;
   postures: Posture[];
+  bodyPart: string;
   carOk: boolean;
   orientation: Exercise['orientation'];
   isFirst: boolean;
   active: boolean;
   difficulty: Difficulty;
+  targetValue: string;
+  targetUnit: string;
   caution: string;
 }
 
@@ -67,11 +72,14 @@ const BLANK: Form = {
   name: '',
   description: '',
   postures: [],
+  bodyPart: '',
   carOk: false,
   orientation: 'portrait',
   isFirst: false,
   active: true,
   difficulty: '쉬움',
+  targetValue: '',
+  targetUnit: '',
   caution: '',
 };
 
@@ -80,11 +88,14 @@ function formOf(e: Exercise): Form {
     name: e.name,
     description: e.description,
     postures: e.postures,
+    bodyPart: e.bodyPart ?? '',
     carOk: e.carOk,
     orientation: e.orientation,
     isFirst: e.isFirst,
     active: e.active,
     difficulty: e.difficulty,
+    targetValue: e.targetValue != null ? String(e.targetValue) : '',
+    targetUnit: e.targetUnit ?? '',
     caution: e.caution,
   };
 }
@@ -165,6 +176,7 @@ export default function AdminVideosScreen() {
           name: form.name.trim(),
           description: form.description.trim(),
           postures: form.postures,
+          bodyPart: form.bodyPart.trim() || undefined,
           carOk: form.carOk,
           video: editing?.video ?? '',
           orientation: form.orientation,
@@ -173,6 +185,8 @@ export default function AdminVideosScreen() {
           isFirst: form.isFirst,
           active: form.active,
           difficulty: form.difficulty,
+          targetValue: Number(form.targetValue) > 0 ? Number(form.targetValue) : undefined,
+          targetUnit: form.targetUnit.trim() || undefined,
           caution: form.caution.trim(),
         },
         { video: videoFile?.file, thumb: thumbFile ?? videoFile?.probe.thumb ?? undefined },
@@ -208,6 +222,7 @@ export default function AdminVideosScreen() {
           ) : null}
         </View>,
         e.postures.map((p) => POSTURE_LABEL[p]).join('·'),
+        e.bodyPart || '-',
         lengthText(e.durationSec),
         isBuiltIn ? (changed ? '기본(수정됨)' : '기본') : '직접 올림',
         <StatusPill key="s" label={e.active ? '공개' : '비공개'} tone={e.active ? 'green' : 'gray'} />,
@@ -267,9 +282,22 @@ export default function AdminVideosScreen() {
                 }
               />
             </Field>
-            <Field label="난이도 (MOVE 포인트)">
-              <Chips options={DIFFICULTIES} isOn={(d) => form.difficulty === d} onPress={(difficulty) => patch({ difficulty })} />
-            </Field>
+            <FieldRow>
+              <Field label="부위 (선택)">
+                <Input label="부위" value={form.bodyPart} onChangeText={(bodyPart) => patch({ bodyPart })} placeholder="예: 목, 허리" />
+              </Field>
+              <Field label="난이도 (MOVE 포인트)">
+                <Chips options={DIFFICULTIES} isOn={(d) => form.difficulty === d} onPress={(difficulty) => patch({ difficulty })} />
+              </Field>
+            </FieldRow>
+            <FieldRow>
+              <Field label="목표 값 (선택)" hint="비워 두면 앱에 목표를 표시하지 않아요.">
+                <Input label="목표 값" numeric value={form.targetValue} onChangeText={(targetValue) => patch({ targetValue })} />
+              </Field>
+              <Field label="목표 단위 (선택)">
+                <Input label="목표 단위" value={form.targetUnit} onChangeText={(targetUnit) => patch({ targetUnit })} placeholder="회, 초 (좌우)" />
+              </Field>
+            </FieldRow>
             <Field label="주의사항">
               <Input label="주의사항" multiline value={form.caution} onChangeText={(caution) => patch({ caution })} />
             </Field>
@@ -290,7 +318,7 @@ export default function AdminVideosScreen() {
     >
       <DoneNote message={done} />
       <SectionCard title={`영상 목록 (${catalog.length}개)`}>
-        <AdminTable columns={COLUMNS} rows={rows} minWidth={850} />
+        <AdminTable columns={COLUMNS} rows={rows} minWidth={920} />
       </SectionCard>
     </AdminShell>
   );

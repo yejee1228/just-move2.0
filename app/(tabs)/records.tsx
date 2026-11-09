@@ -106,7 +106,7 @@ function RecordCard({ item }: { item: Session }) {
   const title = played.length > 1 ? `${played[0].name} +${played.length - 1}` : (played[0]?.name ?? '운동');
   const countText = item.counts
     ? Object.entries(item.counts)
-        .map(([id, n]) => `${exerciseById(id)?.name ?? ''} ${n}회`)
+        .map(([id, n]) => `${exerciseById(id)?.name ?? ''} ${n}${exerciseById(id)?.targetUnit?.replace(/\s*\(.*\)/, '') ?? '회'}`)
         .join(', ')
     : '';
   const replay = () => {

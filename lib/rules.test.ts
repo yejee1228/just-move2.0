@@ -349,7 +349,7 @@ import type { Schedule } from '@/lib/types';
 describe('운동 예약 (수정 전 기능)', () => {
   const base: Schedule = {
     id: 'a', exerciseId: 'sitting-01', plannedMin: 1, scheduledDate: '2026-10-20', scheduledTime: '09:00',
-    repeatType: 'once', status: 'scheduled', createdAt: '',
+    targetValue: 20, repeatType: 'once', status: 'scheduled', createdAt: '',
   };
   it('오늘 예약: 한번만은 그 날짜, 매일은 매일', () => {
     expect(todaySchedules([base], '2026-10-20')).toHaveLength(1);
@@ -412,7 +412,7 @@ describe('바둑판 태그', () => {
   });
 });
 
-import { mergeCatalog } from '@/data/content';
+import { mergeCatalog, targetText } from '@/data/content';
 import { sortAdsForList } from '@/lib/adReport';
 
 describe('관리자 목록', () => {
@@ -429,5 +429,27 @@ describe('관리자 목록', () => {
     const after = mergeCatalog([{ ...first, deleted: true }]);
     expect(after).toHaveLength(before - 1);
     expect(after.some((e) => e.id === first.id)).toBe(false);
+  });
+});
+
+describe('선택 입력 필드', () => {
+  it('목표 값이 있을 때만 표시한다', () => {
+    expect(targetText({})).toBeNull();
+    expect(targetText({ targetUnit: '회' })).toBeNull();
+    expect(targetText({ targetValue: 10, targetUnit: '회' })).toBe('10회');
+    expect(targetText({ targetValue: 10 })).toBe('10');
+    expect(targetText({ targetValue: 10, targetUnit: '회' }, 12)).toBe('12회');
+  });
+  it('샘플 데이터는 값이 있는 영상과 없는 영상이 섞여 있다', () => {
+    expect(new Set(EXERCISES.map((e) => e.bodyPart != null)).size).toBe(2);
+    expect(new Set(EXERCISES.map((e) => e.targetValue != null)).size).toBe(2);
+  });
+});
+
+import { SHOP_PRODUCTS } from '@/data/content';
+
+describe('상점 샘플', () => {
+  it('해양심층수 10개, 방울토마토 한팩 20개', () => {
+    expect(SHOP_PRODUCTS.map((p) => [p.name, p.price])).toEqual([['해양심층수', 10], ['방울토마토 한팩', 20]]);
   });
 });

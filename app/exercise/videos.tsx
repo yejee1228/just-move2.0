@@ -182,7 +182,7 @@ export default function VideosScreen() {
                   </Text>
                   <View style={styles.metaRow}>
                     <Text style={[styles.cardMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {filter === 'all' ? POSTURE_LABEL[p] : ''}
+                      {[filter === 'all' ? POSTURE_LABEL[p] : '', ex.bodyPart].filter(Boolean).join(' · ')}
                     </Text>
                     {tag ? (
                       <View style={[styles.pickBadge, { backgroundColor: TAG_COLOR[tag] }]}>
