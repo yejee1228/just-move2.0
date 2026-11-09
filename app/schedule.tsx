@@ -45,7 +45,6 @@ export default function ScheduleScreen() {
   const [customDate, setCustomDate] = useState('');
   const [hour, setHour] = useState('09');
   const [minute, setMinute] = useState('00');
-  const [targetValue, setTargetValue] = useState<string>(String(initial.targetValue));
   const [repeat, setRepeat] = useState<'once' | 'daily'>('once');
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -63,7 +62,6 @@ export default function ScheduleScreen() {
     const e = exerciseById(id);
     if (!e) return;
     setExId(id);
-    setTargetValue(String(e.targetValue));
     setPicking(false);
   };
 
@@ -74,17 +72,16 @@ export default function ScheduleScreen() {
       return;
     }
     setError(null);
-    const s = addSchedule({
+    addSchedule({
       exerciseId: ex.id,
       plannedMin: 1, // 모든 영상은 1분
       scheduledDate: date,
       scheduledTime: `${hour}:${minute}`,
-      targetValue: Number(targetValue) || ex.targetValue,
       repeatType: repeat,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDone(
-      `${repeat === 'daily' ? '매일' : dateLabel(date)} ${hour}:${minute}에 ${ex.name} ${s.targetValue}${ex.targetUnit}을 예약했어요.\n\n앱이 열려있을 때 알림이 표시돼요.`,
+      `${repeat === 'daily' ? '매일' : dateLabel(date)} ${hour}:${minute}에 ${ex.name} 운동을 예약했어요.\n\n앱이 열려있을 때 알림이 표시돼요.`,
     );
   };
 
@@ -109,8 +106,7 @@ export default function ScheduleScreen() {
               <Text style={styles.exCardLabel}>예약할 운동</Text>
               <Text style={styles.exCardTitle}>{ex.name}</Text>
               <Text style={styles.exCardSub}>
-                {POSTURE_LABEL[ex.postures[0]]} · 기본 목표 {ex.targetValue}
-                {ex.targetUnit}
+                {POSTURE_LABEL[ex.postures[0]]}
               </Text>
             </View>
             <Ionicons name={picking ? 'chevron-up' : 'chevron-down'} size={20} color="#FFFFFF" />
@@ -214,36 +210,6 @@ export default function ScheduleScreen() {
             예약 시각: {repeat === 'daily' ? '매일' : dateLabel(getScheduledDate())} {hour}:{minute}
           </Text>
 
-          {/* 목표량 */}
-          <Text style={[styles.fieldLabel, { color: colors.text }]}>목표량</Text>
-          <View style={[styles.targetRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="목표량 줄이기"
-              onPress={() => setTargetValue((v) => String(Math.max(1, Number(v) - 1)))}
-              style={[styles.stepper, { backgroundColor: colors.secondary }]}
-            >
-              <Ionicons name="remove" size={18} color={colors.primary} />
-            </Pressable>
-            <TextInput
-              value={targetValue}
-              onChangeText={(t) => setTargetValue(t.replace(/[^0-9]/g, ''))}
-              keyboardType="numeric"
-              style={[styles.targetInput, { color: colors.text }]}
-              selectTextOnFocus
-              accessibilityLabel="목표량"
-            />
-            <Text style={[styles.unitText, { color: colors.textSecondary }]}>{ex.targetUnit}</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="목표량 늘리기"
-              onPress={() => setTargetValue((v) => String(Number(v) + 1))}
-              style={[styles.stepper, { backgroundColor: colors.secondary }]}
-            >
-              <Ionicons name="add" size={18} color={colors.primary} />
-            </Pressable>
-          </View>
-
           {/* 반복 */}
           <Text style={[styles.fieldLabel, { color: colors.text }]}>반복</Text>
           <View style={styles.repeatRow}>
@@ -328,10 +294,6 @@ const styles = StyleSheet.create({
   timeChipText: { fontSize: 13, fontWeight: '700' },
   timeSep: { fontSize: 20, fontWeight: '700', paddingBottom: 10, paddingHorizontal: 4 },
   timePreview: { fontSize: 13, marginBottom: 8, textAlign: 'center' },
-  targetRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, marginBottom: 8, overflow: 'hidden' },
-  stepper: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
-  targetInput: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', height: 48 },
-  unitText: { fontSize: 13, paddingRight: 12 },
   repeatRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   repeatBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5, paddingVertical: 12 },
   repeatText: { fontSize: 14, fontWeight: '600' },

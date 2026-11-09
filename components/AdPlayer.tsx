@@ -72,6 +72,7 @@ export function AdPlayer({
           <VideoSurface
             src={src}
             playing={!paused}
+            forceAutoplay
             onActiveChange={setActive}
             onEnded={finish}
             onFail={finish}

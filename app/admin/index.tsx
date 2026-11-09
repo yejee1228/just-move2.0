@@ -10,7 +10,6 @@ import {
   DoneNote,
   Drawer,
   Field,
-  FieldRow,
   FilePick,
   FormError,
   Input,
@@ -23,7 +22,6 @@ import {
 import { POSTURE_ORDER } from '@/components/Legacy';
 import { EXERCISES } from '@/data/content';
 import { probeVideo, type VideoProbe } from '@/data/media';
-import { appConfig } from '@/lib/config';
 import { formatCount, likeCountOf } from '@/lib/recommend';
 import { POSTURE_LABEL, type Difficulty, type Exercise, type Posture } from '@/lib/types';
 import { useStore } from '@/store/AppStore';
@@ -45,7 +43,6 @@ const COLUMNS: Column[] = [
   { label: '썸네일', width: 64 },
   { label: '동작 이름', flex: 2.4 },
   { label: '자세', flex: 1 },
-  { label: '부위', width: 72 },
   { label: '길이', width: 56 },
   { label: '구분', width: 90 },
   { label: '상태', width: 68 },
@@ -58,14 +55,11 @@ interface Form {
   name: string;
   description: string;
   postures: Posture[];
-  bodyPart: string;
   carOk: boolean;
   orientation: Exercise['orientation'];
   isFirst: boolean;
   active: boolean;
   difficulty: Difficulty;
-  targetValue: string;
-  targetUnit: string;
   caution: string;
 }
 
@@ -73,14 +67,11 @@ const BLANK: Form = {
   name: '',
   description: '',
   postures: [],
-  bodyPart: '',
   carOk: false,
   orientation: 'portrait',
   isFirst: false,
   active: true,
   difficulty: '쉬움',
-  targetValue: '10',
-  targetUnit: '회',
   caution: '',
 };
 
@@ -89,14 +80,11 @@ function formOf(e: Exercise): Form {
     name: e.name,
     description: e.description,
     postures: e.postures,
-    bodyPart: e.bodyPart,
     carOk: e.carOk,
     orientation: e.orientation,
     isFirst: e.isFirst,
     active: e.active,
     difficulty: e.difficulty,
-    targetValue: String(e.targetValue),
-    targetUnit: e.targetUnit,
     caution: e.caution,
   };
 }
@@ -152,11 +140,6 @@ export default function AdminVideosScreen() {
     setBusy(true);
     try {
       const probe = await probeVideo(file);
-      if (probe.durationSec < appConfig.videoSec) {
-        setVideoFile(null);
-        setError(`운동 영상은 1분 이상이어야 해요. 고른 영상은 ${probe.durationSec}초예요.`);
-        return;
-      }
       setVideoFile({ file, probe });
       patch({ orientation: probe.orientation });
     } catch {
@@ -168,12 +151,8 @@ export default function AdminVideosScreen() {
   };
 
   const submit = async () => {
-    const target = Number(form.targetValue);
     if (!form.name.trim()) return setError('동작 이름을 입력해 주세요.');
     if (form.postures.length === 0) return setError('자세를 하나 이상 골라 주세요.');
-    if (!form.bodyPart.trim()) return setError('부위를 입력해 주세요.');
-    if (!Number.isFinite(target) || target <= 0) return setError('목표 값을 입력해 주세요.');
-    if (!form.targetUnit.trim()) return setError('목표 단위를 입력해 주세요.');
     if (!editing && !videoFile) return setError('영상 파일을 골라 주세요.');
 
     setError(null);
@@ -186,7 +165,6 @@ export default function AdminVideosScreen() {
           name: form.name.trim(),
           description: form.description.trim(),
           postures: form.postures,
-          bodyPart: form.bodyPart.trim(),
           carOk: form.carOk,
           video: editing?.video ?? '',
           orientation: form.orientation,
@@ -195,8 +173,6 @@ export default function AdminVideosScreen() {
           isFirst: form.isFirst,
           active: form.active,
           difficulty: form.difficulty,
-          targetValue: target,
-          targetUnit: form.targetUnit.trim(),
           caution: form.caution.trim(),
         },
         { video: videoFile?.file, thumb: thumbFile ?? videoFile?.probe.thumb ?? undefined },
@@ -232,7 +208,6 @@ export default function AdminVideosScreen() {
           ) : null}
         </View>,
         e.postures.map((p) => POSTURE_LABEL[p]).join('·'),
-        e.bodyPart,
         lengthText(e.durationSec),
         isBuiltIn ? (changed ? '기본(수정됨)' : '기본') : '직접 올림',
         <StatusPill key="s" label={e.active ? '공개' : '비공개'} tone={e.active ? 'green' : 'gray'} />,
@@ -240,18 +215,16 @@ export default function AdminVideosScreen() {
         formatCount(likeCountOf(stat)),
         <View key="b" style={styles.btns}>
           <AdminButton small label="수정" variant="outline" onPress={() => startEdit(e)} />
-          {changed ? (
-            <AdminButton
-              small
-              label={confirmId === e.id ? '정말요?' : isBuiltIn ? '되돌리기' : '삭제'}
-              variant="danger"
-              onPress={() => {
-                if (confirmId !== e.id) return setConfirmId(e.id);
-                setConfirmId(null);
-                void deleteVideo(e.id);
-              }}
-            />
-          ) : null}
+          <AdminButton
+            small
+            label={confirmId === e.id ? '정말요?' : '삭제'}
+            variant="danger"
+            onPress={() => {
+              if (confirmId !== e.id) return setConfirmId(e.id);
+              setConfirmId(null);
+              void deleteVideo(e.id);
+            }}
+          />
         </View>,
       ],
     };
@@ -267,7 +240,7 @@ export default function AdminVideosScreen() {
           <Drawer title={editing ? `영상 수정: ${editing.name}` : '운동 영상 올리기'} onClose={close}>
             <Field
               label={editing ? '영상 파일 (바꿀 때만)' : '영상 파일 *'}
-              hint="1분 이상. 길이와 방향은 파일에서 자동으로 읽고, 썸네일도 자동으로 만들어요."
+              hint="길이와 방향은 파일에서 자동으로 읽고, 썸네일도 자동으로 만들어요."
             >
               <FilePick
                 accept="video/*"
@@ -294,22 +267,9 @@ export default function AdminVideosScreen() {
                 }
               />
             </Field>
-            <FieldRow>
-              <Field label="부위 *">
-                <Input label="부위" value={form.bodyPart} onChangeText={(bodyPart) => patch({ bodyPart })} placeholder="예: 목, 허리" />
-              </Field>
-              <Field label="난이도 (MOVE 포인트)">
-                <Chips options={DIFFICULTIES} isOn={(d) => form.difficulty === d} onPress={(difficulty) => patch({ difficulty })} />
-              </Field>
-            </FieldRow>
-            <FieldRow>
-              <Field label="목표 값 *">
-                <Input label="목표 값" numeric value={form.targetValue} onChangeText={(targetValue) => patch({ targetValue })} />
-              </Field>
-              <Field label="목표 단위 *">
-                <Input label="목표 단위" value={form.targetUnit} onChangeText={(targetUnit) => patch({ targetUnit })} placeholder="회, 초 (좌우)" />
-              </Field>
-            </FieldRow>
+            <Field label="난이도 (MOVE 포인트)">
+              <Chips options={DIFFICULTIES} isOn={(d) => form.difficulty === d} onPress={(difficulty) => patch({ difficulty })} />
+            </Field>
             <Field label="주의사항">
               <Input label="주의사항" multiline value={form.caution} onChangeText={(caution) => patch({ caution })} />
             </Field>
@@ -330,7 +290,7 @@ export default function AdminVideosScreen() {
     >
       <DoneNote message={done} />
       <SectionCard title={`영상 목록 (${catalog.length}개)`}>
-        <AdminTable columns={COLUMNS} rows={rows} minWidth={920} />
+        <AdminTable columns={COLUMNS} rows={rows} minWidth={850} />
       </SectionCard>
     </AdminShell>
   );

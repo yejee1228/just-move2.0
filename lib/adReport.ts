@@ -19,6 +19,16 @@ export function adStatus(ad: AdVideo, today: string): AdStatus {
 
 export const isAdLive = (ad: AdVideo, today: string): boolean => adStatus(ad, today) === 'live';
 
+/** 관리 목록 순서: 게시 중인 광고 먼저, 그 안에서는 등록한 순서 (수정해도 자리가 바뀌지 않는다) */
+export function sortAdsForList(ads: AdVideo[], today: string): AdVideo[] {
+  return [...ads].sort(
+    (a, b) =>
+      Number(isAdLive(b, today)) - Number(isAdLive(a, today)) ||
+      a.createdAt.localeCompare(b.createdAt) ||
+      a.id.localeCompare(b.id),
+  );
+}
+
 export interface AdDayRow {
   date: string;
   views: number;

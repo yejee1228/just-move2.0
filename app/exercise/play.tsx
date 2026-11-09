@@ -7,13 +7,15 @@ import { useColors } from '@/hooks/useColors';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { BottomBar, FlowHeader } from '@/components/Legacy';
 import VideoSurface from '@/components/VideoSurface';
+import { AdBanner } from '@/components/AdBanner';
 import { AdPlayer } from '@/components/AdPlayer';
 import { useMediaUrl } from '@/hooks/useMediaUrl';
 import { isAdLive } from '@/lib/adReport';
+import { bannerForSlot, isBannerAd } from '@/lib/ads';
 import { todayKey } from '@/lib/date';
 import { exerciseById, videoSecOf } from '@/data/content';
 import { appConfig } from '@/lib/config';
-import { creditedMinutes, dropsToGrant } from '@/lib/session';
+import { dropsToGrant, playsEarningDrop } from '@/lib/session';
 import { dropsOnDate } from '@/lib/stats';
 import { useStore } from '@/store/AppStore';
 import type { AdVideo, InProgress } from '@/lib/types';
@@ -24,13 +26,6 @@ const TICK_MS = 250;
 function fmt(sec: number): string {
   const s = Math.max(0, Math.round(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-function totalPlayed(cur: InProgress): number {
-  return (
-    cur.slotPlayedSec.reduce((a, b) => a + b, 0) +
-    cur.extraItems.reduce((a, b) => a + b.playedSec, 0)
-  );
 }
 
 export default function PlayScreen() {
@@ -47,6 +42,7 @@ export default function PlayScreen() {
   const lastTick = useRef(Date.now());
   const [area, setArea] = useState<{ w: number; h: number } | null>(null);
   const [ad, setAd] = useState<AdVideo | null>(null); // 지금 재생 중인 광고
+  const [lapKey, setLapKey] = useState(0); // 반복 재생으로 영상을 처음부터 다시 틀 때마다 늘어난다
   const adsRef = useRef(ads);
   adsRef.current = ads;
 
@@ -66,7 +62,7 @@ export default function PlayScreen() {
 
   const cur = curRef.current;
   const exercise = cur ? exerciseById(cur.playlist[cur.slotIndex]) : undefined;
-  // 영상 길이: 파일에서 확인한 실제 길이 → 목록에 적힌 길이 → 기본 1분 (모든 영상은 1분 이상)
+  // 영상 길이: 파일에서 확인한 실제 길이 → 목록에 적힌 길이 → 기본 1분
   const videoLen = (cur && cur.slotVideoSec?.[cur.slotIndex]) || videoSecOf(exercise);
   const media = useMediaUrl(exercise?.video);
   const active = !paused && !ad && (failed || videoActive);
@@ -123,6 +119,37 @@ export default function PlayScreen() {
     goToSlot(c.slotIndex + 1);
   }, [finish, goToSlot, persist]);
 
+  // 영상이 끝났을 때: 반복 횟수가 남았으면 처음부터 다시, 아니면 다음 영상으로
+  const onPlayEnded = useCallback(() => {
+    const c = curRef.current;
+    if (!c || finishedRef.current) return;
+    const i = c.slotIndex;
+    const laps = c.slotLaps?.[i] ?? [];
+    if (laps.length + 1 >= (c.slotRepeats?.[i] ?? 1)) {
+      advance();
+      return;
+    }
+    const lapSec = (c.slotPlayedSec[i] ?? 0) - laps.reduce((a, b) => a + b, 0);
+    const slotLaps = c.playlist.map((_, n) => c.slotLaps?.[n] ?? []);
+    slotLaps[i] = [...laps, lapSec];
+    curRef.current = { ...c, slotLaps };
+    setPosition(0);
+    setVideoActive(false);
+    setLapKey((k) => k + 1);
+    persist();
+  }, [advance, persist]);
+
+  const changeRepeat = (delta: number) => {
+    const c = curRef.current;
+    if (!c) return;
+    const slotRepeats = c.playlist.map((_, n) => c.slotRepeats?.[n] ?? 1);
+    slotRepeats[c.slotIndex] = Math.min(appConfig.repeatMax, Math.max(1, slotRepeats[c.slotIndex] + delta));
+    curRef.current = { ...c, slotRepeats };
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    persist();
+    rerender();
+  };
+
   const endAd = useCallback(() => {
     const c = curRef.current;
     setAd(null);
@@ -160,8 +187,8 @@ export default function PlayScreen() {
 
   // 임시 재생 모드는 영상 길이만큼 흐르면 다음으로
   useEffect(() => {
-    if (failed && position >= videoLen) advance();
-  }, [failed, position, videoLen, advance]);
+    if (failed && position >= videoLen) onPlayEnded();
+  }, [failed, position, videoLen, onPlayEnded]);
 
   const onDuration = useCallback((sec: number) => {
     const c = curRef.current;
@@ -229,9 +256,14 @@ export default function PlayScreen() {
   }
 
   const remaining = videoLen - position;
-  // 1분 이상 보면 이번 운동에 물방울 1개 (하루 최대 dropDailyLimit개)
+  const today = todayKey();
+  const repeatCount = cur.slotRepeats?.[cur.slotIndex] ?? 1;
+  // 지금 보고 있는 회차를 포함한 남은 재생 횟수
+  const repeatsLeft = Math.max(1, repeatCount - (cur.slotLaps?.[cur.slotIndex]?.length ?? 0));
+  const banner = bannerForSlot(ads.filter((a) => isBannerAd(a) && isAdLive(a, today)), cur.id, cur.slotIndex);
+  // 1분 이상 본 재생 1회에 물방울 1개 (하루 최대 dropDailyLimit개)
   const dropsNow = dropsToGrant(
-    creditedMinutes(totalPlayed(cur)),
+    playsEarningDrop(cur.slotPlayedSec, cur.slotLaps),
     dropsOnDate(sessions, cur.localDate),
     appConfig.dropDailyLimit,
   );
@@ -283,10 +315,11 @@ export default function PlayScreen() {
         >
           {!failed ? (
             media.src ? <VideoSurface
+              key={lapKey}
               src={media.src}
               playing={!paused}
               onActiveChange={setVideoActive}
-              onEnded={advance}
+              onEnded={onPlayEnded}
               onFail={onFail}
               onBlocked={onBlocked}
               onDuration={onDuration}
@@ -306,6 +339,36 @@ export default function PlayScreen() {
             </View>
           ) : null}
         </Pressable>
+
+        {/* 반복 재생: 이 영상을 몇 번 볼지 */}
+        <View style={styles.repeatBox}>
+          <Text style={styles.repeatLabel}>반복재생 횟수</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="반복재생 횟수 줄이기"
+            accessibilityState={{ disabled: repeatCount <= 1 }}
+            disabled={repeatCount <= 1}
+            hitSlop={6}
+            onPress={() => changeRepeat(-1)}
+            style={[styles.repeatBtn, { opacity: repeatCount <= 1 ? 0.35 : 1 }]}
+          >
+            <Ionicons name="remove" size={14} color="#FFFFFF" />
+          </Pressable>
+          <Text style={styles.repeatCount} accessibilityLabel={`반복재생 ${repeatCount}번`}>
+            {repeatCount}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="반복재생 횟수 늘리기"
+            accessibilityState={{ disabled: repeatCount >= appConfig.repeatMax }}
+            disabled={repeatCount >= appConfig.repeatMax}
+            hitSlop={6}
+            onPress={() => changeRepeat(1)}
+            style={[styles.repeatBtn, { opacity: repeatCount >= appConfig.repeatMax ? 0.35 : 1 }]}
+          >
+            <Ionicons name="add" size={14} color="#FFFFFF" />
+          </Pressable>
+        </View>
       </View>
       <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
         <View
@@ -316,15 +379,12 @@ export default function PlayScreen() {
         />
       </View>
 
-      {/* 정보 영역: 수정 전 목표 / 시간 / 부위 줄 + 안내 상자 */}
+      {/* 정보 영역: 남은 횟수 / 남은 시간 / 모은 물방울 줄 + 안내 상자 */}
       <View style={styles.infoArea}>
         <View style={[styles.goalRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.goalItem}>
-            <Text style={[styles.goalLabel, { color: colors.textSecondary }]}>목표</Text>
-            <Text style={[styles.goalValue, { color: colors.text }]} numberOfLines={1}>
-              {exercise.targetValue}
-              {exercise.targetUnit}
-            </Text>
+            <Text style={[styles.goalLabel, { color: colors.textSecondary }]}>남은 횟수</Text>
+            <Text style={[styles.goalValue, { color: colors.text }]}>{repeatsLeft}회</Text>
           </View>
           <View style={[styles.goalDivider, { backgroundColor: colors.border }]} />
           <View style={styles.goalItem}>
@@ -355,6 +415,19 @@ export default function PlayScreen() {
           </Text>
         </View>
         <Text style={[styles.safety, { color: colors.text }]}>통증이나 어지러움이 느껴지면 즉시 멈춰주세요</Text>
+
+        {banner ? (
+          <AdBanner
+            key={`${slotKey}:${banner.id}`}
+            ad={banner}
+            onShown={recordAdView}
+            onClick={(id) => {
+              setPaused(true);
+              persist();
+              recordAdClick(id);
+            }}
+          />
+        ) : null}
 
         {__DEV__ && failed ? (
           <Pressable
@@ -436,6 +509,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   pauseText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  repeatBox: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 8,
+    paddingLeft: 8,
+    paddingRight: 4,
+    paddingVertical: 3,
+  },
+  repeatLabel: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', marginRight: 2 },
+  repeatBtn: { width: 24, height: 24, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)' },
+  repeatCount: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', minWidth: 16, textAlign: 'center' },
   progressTrack: { height: 4 },
   progressFill: { height: 4 },
   infoArea: { padding: 20, gap: 12 },

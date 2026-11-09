@@ -7,15 +7,14 @@ import { useColors } from '@/hooks/useColors';
 import { BottomBar, FlowHeader, POSTURE_ORDER, PostureIcon, useLegacyPad } from '@/components/Legacy';
 import { MediaThumb } from '@/components/MediaThumb';
 import { appConfig } from '@/lib/config';
-import { formatCount, likeCountOf, rankVideos, videoScore } from '@/lib/recommend';
+import { formatCount, likeCountOf, rankVideos, videoTag, type VideoTag } from '@/lib/recommend';
 import { POSTURE_LABEL, type Exercise, type Posture } from '@/lib/types';
 import { useStore } from '@/store/AppStore';
 
 /**
- * M-01 운동 영상 바둑판 (모든 영상은 1분 이상)
+ * M-01 운동 영상 바둑판
  * 홈에서 자세를 누르면 ?posture=lying 처럼 그 자세로 열리고, 난이도와 상관없이 그 자세의 영상을 모두 보여 준다.
- * 체크박스로 최대 10개를 고르면 고른 순서대로만 연결 재생하고,
- * 체크 없이 영상을 누르면 그 영상부터 시작해 추천 영상이 뒤를 이어 최대 10개를 재생한다.
+ * 영상 카드나 체크박스를 눌러 최대 10개를 고르고, 하단의 재생 버튼을 눌러야 고른 순서대로 재생한다.
  * 순서는 시청 기록으로 정한 맞춤 순서 (lib/recommend.ts).
  */
 
@@ -26,17 +25,19 @@ const MAX = appConfig.playlistMax;
 const isFilter = (v: unknown): v is Filter =>
   v === 'all' || v === 'lying' || v === 'sitting' || v === 'standing' || v === 'walking';
 
-/** 카드에 보이는 영상 길이. 목록에 길이를 적은 영상은 m:ss, 아니면 "1분+" (모든 영상은 1분 이상) */
-function lengthLabel(ex: Exercise): string {
-  if (!ex.durationSec) return '1분+';
+/** 카드에 보이는 영상 길이 m:ss. 길이를 모르면 표시하지 않는다 */
+function lengthLabel(ex: Exercise): string | null {
+  if (!ex.durationSec) return null;
   const s = Math.round(ex.durationSec);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+const TAG_COLOR: Record<VideoTag, string> = { frequent: '#173B57', challenge: '#D9480F', recommended: '#F5A623' };
+
 export default function VideosScreen() {
   const colors = useColors();
   const pad = useLegacyPad();
-  const { catalog, settings, videoStats, startSession, startSelected, setLastPosture, toggleLike } = useStore();
+  const { catalog, settings, videoStats, startSelected, setLastPosture, toggleLike } = useStore();
   const params = useLocalSearchParams<{ posture?: string; t?: string }>();
   const [filter, setFilter] = useState<Filter>(
     isFilter(params.posture) ? params.posture : settings.lastPosture ?? 'all',
@@ -55,11 +56,6 @@ export default function VideosScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setFilter(f);
     setLastPosture(f === 'all' ? null : f);
-  };
-
-  const play = (ex: Exercise) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (startSession(ex.id, filter)) router.push('/exercise/play');
   };
 
   const toggleSelect = (id: string) => {
@@ -89,7 +85,7 @@ export default function VideosScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          영상을 누르면 바로 시작해요. 체크하면 고른 순서대로 최대 {MAX}개를 이어서 볼 수 있어요.
+          영상을 눌러 고른 뒤 아래 재생 버튼을 누르면 시작해요. 고른 순서대로 최대 {MAX}개를 이어서 볼 수 있어요.
         </Text>
 
         <ScrollView
@@ -129,16 +125,13 @@ export default function VideosScreen() {
             const stat = videoStats[ex.id];
             const order = selected.indexOf(ex.id) + 1;
             const liked = !!stat?.liked;
+            const length = lengthLabel(ex);
+            const tag = videoTag(ex, stat);
             return (
               <View key={ex.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.thumb}>
                   <MediaThumb thumbnail={ex.thumbnail} posture={p} />
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${ex.name}, 영상 재생`}
-                    onPress={() => play(ex)}
-                    style={StyleSheet.absoluteFill}
-                  />
+                  <Pressable accessibilityElementsHidden onPress={() => toggleSelect(ex.id)} style={StyleSheet.absoluteFill} />
 
                   <Pressable
                     accessibilityRole="checkbox"
@@ -156,9 +149,11 @@ export default function VideosScreen() {
                     {order > 0 ? <Text style={styles.checkNum}>{order}</Text> : null}
                   </Pressable>
 
-                  <View style={[styles.pill, styles.pillTopRight]} pointerEvents="none">
-                    <Text style={styles.pillText}>{lengthLabel(ex)}</Text>
-                  </View>
+                  {length ? (
+                    <View style={[styles.pill, styles.pillTopRight]} pointerEvents="none">
+                      <Text style={styles.pillText}>{length}</Text>
+                    </View>
+                  ) : null}
 
                   <View style={[styles.pill, styles.pillBottomLeft]} pointerEvents="none">
                     <Ionicons name="eye-outline" size={13} color="#FFFFFF" />
@@ -181,18 +176,19 @@ export default function VideosScreen() {
                   </Pressable>
                 </View>
 
-                <Pressable accessibilityElementsHidden onPress={() => play(ex)} style={styles.cardBody}>
+                <Pressable accessibilityElementsHidden onPress={() => toggleSelect(ex.id)} style={styles.cardBody}>
                   <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
                     {ex.name}
                   </Text>
                   <View style={styles.metaRow}>
                     <Text style={[styles.cardMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {filter === 'all' ? `${POSTURE_LABEL[p]} · ` : ''}
-                      {ex.bodyPart}
+                      {filter === 'all' ? POSTURE_LABEL[p] : ''}
                     </Text>
-                    {videoScore(stat) > 0 ? (
-                      <View style={[styles.pickBadge, { backgroundColor: colors.accent }]}>
-                        <Text style={styles.pickBadgeText}>추천</Text>
+                    {tag ? (
+                      <View style={[styles.pickBadge, { backgroundColor: TAG_COLOR[tag] }]}>
+                        <Text style={styles.pickBadgeText} numberOfLines={1}>
+                          {appConfig.videoTags.labels[tag]}
+                        </Text>
                       </View>
                     ) : null}
                   </View>
@@ -287,7 +283,7 @@ const styles = StyleSheet.create({
   pillText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   cardBody: { padding: 10, gap: 2 },
   cardTitle: { fontSize: 14, fontWeight: '700', lineHeight: 19, minHeight: 38 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, minHeight: 20 },
   cardMeta: { fontSize: 12, flexShrink: 1 },
   pickBadge: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   pickBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui';
 import { exerciseById } from '@/data/content';
 import { appConfig } from '@/lib/config';
 import { badges, rewardLevel, totalPoints } from '@/lib/rewards';
-import { movedDateKeys } from '@/lib/stats';
+import { dropsOnDate, movedDateKeys } from '@/lib/stats';
 import { todayKey } from '@/lib/date';
 import { PERCEIVED_LABEL, type Perceived } from '@/lib/types';
 import { useStore } from '@/store/AppStore';
@@ -89,7 +89,7 @@ export default function CompleteScreen() {
               움직이려고 한 것만으로도 충분해요
             </Text>
             <Text style={[styles.successSub, { color: colors.textSecondary, textAlign: 'center' }]}>
-              1분 이상 움직이면 기록과 물방울이 쌓여요.{'\n'}언제든 다시 해봐요.
+              1분 이상 움직이면 기록이 쌓이고,{'\n'}영상 하나를 1분 이상 보면 물방울을 받아요.
             </Text>
           </View>
         </ScrollView>
@@ -225,7 +225,7 @@ export default function CompleteScreen() {
   const newBadges = badges(movedDateKeys(sessions), today).filter((b) => b.unlocked && !beforeBadges.has(b.id));
   const level = rewardLevel(totalPoints(sessions));
   const isMax = level.level === 5;
-  const dropLimitReached = session.dropsEarned === 0;
+  const dropLimitReached = dropsOnDate(sessions, session.localDate) >= appConfig.dropDailyLimit;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

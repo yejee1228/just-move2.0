@@ -40,10 +40,6 @@ export default function SchedulesScreen() {
                     {s.repeatType === 'daily' ? '매일' : formatMonthDay(s.scheduledDate)} {s.scheduledTime} · {s.plannedMin}분
                   </Text>
                   <Text style={[styles.title, { color: colors.text }]}>{ex?.name ?? '운동'}</Text>
-                  <Text style={[styles.goal, { color: colors.textSecondary }]}>
-                    목표 {s.targetValue}
-                    {ex?.targetUnit}
-                  </Text>
                 </View>
                 <Pressable
                   accessibilityRole="button"
@@ -83,7 +79,6 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 12 },
   time: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
   title: { fontSize: 15, fontWeight: '600' },
-  goal: { fontSize: 12, marginTop: 2 },
   cancel: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginRight: 12 },
   cancelText: { fontSize: 13, fontWeight: '700' },
   addBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 14, paddingVertical: 16 },

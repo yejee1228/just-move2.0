@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, dateKey, diffDays, weekStartKey } from '@/lib/date';
-import { creditedMinutes, dropsToGrant, isItemCompleted } from '@/lib/session';
+import { creditedMinutes, dropsToGrant, isItemCompleted, playsEarningDrop } from '@/lib/session';
 import { addDrops, initialFarm, waterCrop } from '@/lib/farm';
-import { continuePlaylist, formatCount, playlistFrom, rankVideos, videoScore } from '@/lib/recommend';
-import { planAds } from '@/lib/ads';
+import { continuePlaylist, formatCount, playlistFrom, rankVideos, videoScore, videoTag } from '@/lib/recommend';
+import { bannerForSlot, isBannerAd, planAds } from '@/lib/ads';
 import { topExercises } from '@/lib/stats';
 import { adStatus, adTotals, ctrText, dailyCsv, isAdLive, summaryCsv } from '@/lib/adReport';
 import type { AdVideo } from '@/lib/types';
@@ -31,10 +31,17 @@ describe('인정 시간·물방울', () => {
     expect(creditedMinutes(270)).toBe(4); // 4분 30초 → 4분
     expect(creditedMinutes(900)).toBe(15);
   });
-  it('1분 이상 본 운동 1번에 물방울 1개, 하루 5개 한도', () => {
-    expect(dropsToGrant(creditedMinutes(59), 0, 5)).toBe(0);
-    expect(dropsToGrant(creditedMinutes(60), 0, 5)).toBe(1);
-    expect(dropsToGrant(creditedMinutes(900), 0, 5)).toBe(1); // 15분 봐도 1개
+  it('1분 이상 본 영상 1개마다 물방울 1개, 하루 5개 한도', () => {
+    expect(playsEarningDrop([58.9])).toBe(0);
+    expect(playsEarningDrop([59.8])).toBe(1); // 측정 오차로 딱 1분짜리 영상이 빠지지 않는다
+    expect(playsEarningDrop([900])).toBe(1); // 한 번 재생을 15분 봐도 1개
+    expect(playsEarningDrop([30, 30, 30])).toBe(0); // 여러 영상의 시간을 합치지 않는다
+    expect(playsEarningDrop([61, 20, 75, 60])).toBe(3);
+    expect(playsEarningDrop([207], [[69, 69]])).toBe(3); // 3번 반복: 회차마다 1개
+    expect(playsEarningDrop([100], [[69]])).toBe(1); // 지금 회차는 31초라 아직 없다
+    expect(playsEarningDrop([90], [[30, 30]])).toBe(0); // 짧은 영상은 회차 시간을 합치지 않는다
+    expect(dropsToGrant(0, 0, 5)).toBe(0);
+    expect(dropsToGrant(3, 0, 5)).toBe(3);
     expect(dropsToGrant(3, 4, 5)).toBe(1);
     expect(dropsToGrant(3, 5, 5)).toBe(0);
     expect(dropsToGrant(1, 7, 5)).toBe(0);
@@ -342,7 +349,7 @@ import type { Schedule } from '@/lib/types';
 describe('운동 예약 (수정 전 기능)', () => {
   const base: Schedule = {
     id: 'a', exerciseId: 'sitting-01', plannedMin: 1, scheduledDate: '2026-10-20', scheduledTime: '09:00',
-    targetValue: 20, repeatType: 'once', status: 'scheduled', createdAt: '',
+    repeatType: 'once', status: 'scheduled', createdAt: '',
   };
   it('오늘 예약: 한번만은 그 날짜, 매일은 매일', () => {
     expect(todaySchedules([base], '2026-10-20')).toHaveLength(1);
@@ -373,5 +380,54 @@ describe('홈 알림 버튼 안내', () => {
     expect(nextReminderLabel({ ...s, notification: { ...s.notification, enabled: false } }, at(10), 0, 5)).toBe('꺼짐');
     expect(nextReminderLabel(s, at(10), 5, 5)).toBe('내일 9시');
     expect(nextReminderLabel({ ...s, reminder: { ...s.reminder, stopDate: '2026-10-20' } }, at(10), 0, 5)).toBe('내일 9시');
+  });
+});
+
+describe('배너 광고', () => {
+  it('종류가 없는 예전 광고는 영상 광고로 본다', () => {
+    expect(isBannerAd({})).toBe(false);
+    expect(isBannerAd({ kind: 'video' })).toBe(false);
+    expect(isBannerAd({ kind: 'banner' })).toBe(true);
+  });
+  it('배너가 없으면 비우고, 칸이 바뀌면 다음 배너로 넘어간다', () => {
+    expect(bannerForSlot([], 'a', 0)).toBeUndefined();
+    expect(bannerForSlot(['x'], 'a', 7)).toBe('x');
+    const list = ['x', 'y', 'z'];
+    const first = bannerForSlot(list, 'session-1', 0)!;
+    expect(bannerForSlot(list, 'session-1', 0)).toBe(first);
+    expect(bannerForSlot(list, 'session-1', 1)).toBe(list[(list.indexOf(first) + 1) % 3]);
+    expect(bannerForSlot(list, 'session-1', 3)).toBe(first);
+  });
+});
+
+describe('바둑판 태그', () => {
+  const s = { picks: 0, plays: 0, completes: 0, quits: 0 };
+  it('자주 한 운동이 먼저, 안 해 본 보통 이상은 도전, 맞춤 점수가 있으면 추천', () => {
+    expect(videoTag({ difficulty: '쉬움' }, undefined)).toBeNull();
+    expect(videoTag({ difficulty: '보통' }, undefined)).toBe('challenge');
+    expect(videoTag({ difficulty: '어려움' }, s)).toBe('challenge');
+    expect(videoTag({ difficulty: '쉬움' }, { ...s, plays: 1, completes: 1 })).toBe('recommended');
+    expect(videoTag({ difficulty: '보통' }, { ...s, plays: 1, quits: 1 })).toBeNull();
+    expect(videoTag({ difficulty: '보통' }, { ...s, plays: 3, completes: 3 })).toBe('frequent');
+  });
+});
+
+import { mergeCatalog } from '@/data/content';
+import { sortAdsForList } from '@/lib/adReport';
+
+describe('관리자 목록', () => {
+  const ad = (id: string, createdAt: string, endDate = '2026-12-31'): AdVideo => ({
+    id, title: id, advertiser: '', video: '', startDate: '2026-11-01', endDate, skipAfterSec: null, active: true, stats: {}, createdAt,
+  });
+  it('광고는 게시 중 먼저, 그 안에서 등록한 순서', () => {
+    const list = [ad('new', '2026-11-05'), ad('ended', '2026-11-01', '2026-11-02'), ad('old', '2026-11-03'), ad('same-b', '2026-11-04'), ad('same-a', '2026-11-04')];
+    expect(sortAdsForList(list, '2026-11-09').map((a) => a.id)).toEqual(['old', 'same-a', 'same-b', 'new', 'ended']);
+  });
+  it('삭제 표시한 기본 영상은 목록에서 빠진다', () => {
+    const first = EXERCISES[0];
+    const before = mergeCatalog([]).length;
+    const after = mergeCatalog([{ ...first, deleted: true }]);
+    expect(after).toHaveLength(before - 1);
+    expect(after.some((e) => e.id === first.id)).toBe(false);
   });
 });

@@ -9,6 +9,12 @@
   "adGapMin": 2,
   "adGapMax": 3,
   "adSkipSec": 5,
+  "repeatMax": 10,
+  "videoTags": {
+    "labels": { "frequent": "자주 한 운동", "challenge": "도전", "recommended": "추천" },
+    "frequentMinPlays": 3,
+    "challengeDifficulties": ["보통", "어려움"]
+  },
   "completeRatio": 0.8,
   "notificationDefault": { "enabled": true, "startHour": 9, "endHour": 20 }
 }

@@ -1,3 +1,15 @@
+import type { AdVideo } from '@/lib/types';
+
+export const isBannerAd = (ad: Pick<AdVideo, 'kind'>): boolean => ad.kind === 'banner';
+
+/** 이번 운동의 이 칸에 붙일 배너. 운동마다 시작 배너가 달라지고, 다음 칸으로 가면 다음 배너로 바뀐다 */
+export function bannerForSlot<T>(banners: T[], seed: string, slot: number): T | undefined {
+  if (banners.length === 0) return undefined;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return banners[(hash + slot) % banners.length];
+}
+
 /**
  * 영상 사이 광고 계획.
  * 영상 gapMin~gapMax개를 볼 때마다 광고 하나를 무작위로 넣는다. 마지막 영상 뒤에는 넣지 않는다.

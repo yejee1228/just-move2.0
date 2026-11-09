@@ -10,6 +10,7 @@ export default function VideoSurface({
   onFail,
   onBlocked,
   onDuration,
+  forceAutoplay,
 }: VideoSurfaceProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
 
@@ -17,17 +18,25 @@ export default function VideoSurface({
     const v = ref.current;
     if (!v) return;
     if (playing) {
-      const p = v.play();
-      if (p && typeof p.catch === 'function') {
-        // 브라우저가 자동 재생을 막은 경우에만 멈춤 상태로 둔다 (파일 오류는 onError가 처리)
+      const start = () => {
+        const p = v.play();
+        if (!p || typeof p.catch !== 'function') return;
+        // 브라우저가 자동 재생을 막은 경우에만 처리한다 (파일 오류는 onError가 처리)
         p.catch((e: { name?: string }) => {
-          if (e?.name === 'NotAllowedError') onBlocked();
+          if (e?.name !== 'NotAllowedError') return;
+          if (forceAutoplay && !v.muted) {
+            v.muted = true;
+            start();
+            return;
+          }
+          onBlocked();
         });
-      }
+      };
+      start();
     } else {
       v.pause();
     }
-  }, [playing, src, onBlocked]);
+  }, [playing, src, onBlocked, forceAutoplay]);
 
   return createElement('video', {
     key: src,

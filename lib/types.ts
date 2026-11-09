@@ -21,21 +21,20 @@ export interface Exercise {
   name: string;
   description: string;
   postures: Posture[];
-  bodyPart: string;
   carOk: boolean;
   /** public/videos 아래 파일 경로 (예: /videos/lying-01.mp4). 파일이 없으면 임시 재생 모드 */
   video: string;
   orientation: 'portrait' | 'landscape';
   /** 썸네일 ('idb:키' = 관리자가 올린 이미지). 없으면 자세 아이콘 */
   thumbnail?: string;
-  /** 영상 길이(초). 모든 영상은 1분 이상. 비워 두면 기본 1분으로 보고, 재생할 때 파일의 실제 길이를 쓴다 */
+  /** 영상 길이(초). 비워 두면 기본 1분으로 보고, 재생할 때 파일의 실제 길이를 쓴다 */
   durationSec?: number;
   isFirst: boolean;
   active: boolean;
+  /** 관리자가 삭제한 기본 영상 표시. 기본 영상 데이터는 앱에 들어 있어서 이 표시로 목록에서 뺀다 */
+  deleted?: boolean;
   /** 수정 전 운동 데이터에서 이어받은 필드 */
   difficulty: Difficulty;
-  targetValue: number;
-  targetUnit: string;
   caution: string;
 }
 
@@ -55,13 +54,18 @@ export interface VideoStat {
   lastPlayedAt?: string;
 }
 
-/** 영상 사이에 나오는 광고 (관리자 등록) */
+/** 광고 종류. 영상 = 영상 사이 전체 화면, 배너 = 운동 영상 화면 아래 이미지 */
+export type AdKind = 'video' | 'banner';
+
+/** 광고 (관리자 등록) */
 export interface AdVideo {
   id: string;
+  /** 없으면 영상 광고 (배너가 생기기 전에 저장된 광고) */
+  kind?: AdKind;
   title: string;
   advertiser: string;
   linkUrl?: string;
-  /** 'idb:키' = 관리자가 올린 영상 */
+  /** 영상 또는 배너 이미지. 'idb:키' = 관리자가 올린 파일, /... = 앱에 포함된 샘플 */
   video: string;
   durationSec?: number;
   /** 게시 기간 (한국시간 YYYY-MM-DD, 양 끝 날짜 포함) */
@@ -114,7 +118,6 @@ export interface Schedule {
   plannedMin: 1 | 3 | 5;
   scheduledDate: string; // YYYY-MM-DD
   scheduledTime: string; // HH:MM
-  targetValue: number;
   repeatType: 'once' | 'daily';
   status: 'scheduled' | 'completed' | 'cancelled';
   /** 마지막으로 알림을 띄운 날짜 (매일 반복용) */
@@ -139,6 +142,10 @@ export interface InProgress {
   slotIndex: number;
   /** 슬롯별 재생 초 / 건너뜀 */
   slotPlayedSec: number[];
+  /** 슬롯별 반복 재생 횟수 (없으면 1) */
+  slotRepeats?: number[];
+  /** 슬롯별로 반복 재생을 마친 회차의 재생 초 (물방울을 회차마다 세는 데 쓴다) */
+  slotLaps?: number[][];
   /** 슬롯별 영상의 실제 길이(초). 파일을 불러와 알게 된 것만 */
   slotVideoSec?: (number | null)[];
   /** 건너뛰기로 교체되어 밀려난 동작의 재생 기록 */

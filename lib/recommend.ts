@@ -1,8 +1,9 @@
+import { appConfig } from '@/lib/config';
 import type { Exercise, Posture, VideoStat } from '@/lib/types';
 
 /**
  * 영상 추천 (바둑판 순서)
- * 모든 영상은 1분 이상이고 난이도와 상관없이 고른 자세의 영상을 모두 보여 준다.
+ * 난이도와 상관없이 고른 자세의 영상을 모두 보여 준다.
  * 시청 기록이 쌓이면 맞춤 영상이 위로 올라온다.
  *  - 하트(좋아요) +5, 끝까지 본 횟수 +1, 바둑판에서 직접 고른 횟수 +0.5, 중간에 넘긴 횟수 -1
  * 기록이 없으면 콘텐츠 순서 그대로 ('첫 동작' 지정 영상이 맨 앞).
@@ -23,6 +24,20 @@ export function rankVideos(
     .map((e, i) => ({ e, i, score: videoScore(stats[e.id]) }))
     .sort((a, b) => b.score - a.score || a.i - b.i)
     .map((x) => x.e);
+}
+
+export type VideoTag = keyof typeof appConfig.videoTags.labels;
+
+/**
+ * 바둑판 카드 태그. 이름과 기준은 data/content/config.json의 videoTags에서 바꾼다.
+ * 자주 한 운동(frequentMinPlays번 이상) → 도전(안 해 본 challengeDifficulties 난이도) → 추천(맞춤 점수가 0보다 큼) 순서로 하나만 붙인다.
+ */
+export function videoTag(ex: Pick<Exercise, 'difficulty'>, stat: VideoStat | undefined): VideoTag | null {
+  const { frequentMinPlays, challengeDifficulties } = appConfig.videoTags;
+  const plays = stat?.plays ?? 0;
+  if (plays >= frequentMinPlays) return 'frequent';
+  if (plays === 0 && challengeDifficulties.includes(ex.difficulty)) return 'challenge';
+  return videoScore(stat) > 0 ? 'recommended' : null;
 }
 
 /** 고른 영상을 맨 앞에 두고 뒤에 추천 영상을 이어 붙인 목록 (최대 max개) */

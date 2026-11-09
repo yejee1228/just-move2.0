@@ -8,6 +8,8 @@ export interface VideoSurfaceProps {
   onFail: () => void;
   /** 자동 재생이 브라우저에서 막혔을 때 */
   onBlocked: () => void;
+  /** 소리 때문에 자동 재생이 막히면 음소거로 바꿔서라도 재생한다 (영상 광고) */
+  forceAutoplay?: boolean;
   /** 파일을 불러와 영상 길이(초)를 알았을 때 */
   onDuration?: (sec: number) => void;
 }

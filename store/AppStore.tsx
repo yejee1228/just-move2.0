@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  EXERCISES,
   TIP_CARDS,
   WELCOME_MESSAGES,
   allExercises,
@@ -23,9 +24,9 @@ import { dateKey, todayKey } from '@/lib/date';
 import { addDrops, waterCrop as waterCropRule, type WaterResult } from '@/lib/farm';
 import { pickMessage, relationOf, restBucketOf, welcomeRestDays, type WelcomeMessage } from '@/lib/messages';
 import { isAdLive } from '@/lib/adReport';
-import { planAds } from '@/lib/ads';
+import { isBannerAd, planAds } from '@/lib/ads';
 import { continuePlaylist, playlistFrom, rankVideos } from '@/lib/recommend';
-import { creditedMinutes, dropsToGrant, isItemCompleted } from '@/lib/session';
+import { creditedMinutes, dropsToGrant, isItemCompleted, playsEarningDrop } from '@/lib/session';
 import { dropsOnDate, movedDateKeys } from '@/lib/stats';
 import { sessionPoints } from '@/lib/rewards';
 import type {
@@ -143,7 +144,7 @@ export function AppStoreProvider({
           videoSec: cur.slotVideoSec?.[i] ?? videoSecOf(exerciseById(id)),
         })),
       ].filter((it) => it.skipped || it.playedSec > 0);
-      // 끝까지 봤는지: 영상마다 길이가 다르므로(1분 이상) 그 영상 길이의 일정 비율 이상 재생
+      // 끝까지 봤는지: 영상마다 길이가 다르므로 그 영상 길이의 일정 비율 이상 재생
       const completed = (it: SessionItem) =>
         isItemCompleted(
           it.playedSec,
@@ -155,7 +156,7 @@ export function AppStoreProvider({
       const actualSec = Math.round(items.reduce((s, it) => s + it.playedSec, 0));
       const credited = creditedMinutes(actualSec);
       const already = dropsOnDate(ref.current.sessions, cur.localDate);
-      const drops = dropsToGrant(credited, already, appConfig.dropDailyLimit);
+      const drops = dropsToGrant(playsEarningDrop(cur.slotPlayedSec, cur.slotLaps), already, appConfig.dropDailyLimit);
 
       const session: Session = {
         id: cur.id,
@@ -241,7 +242,7 @@ export function AppStoreProvider({
     (playlist: string[], scope: Posture | 'all', picked: string[]): InProgress => {
       const now = Date.now();
       const posture = scope !== 'all' ? scope : (exerciseById(playlist[0])?.postures[0] ?? 'sitting');
-      const activeAds = ref.current.ads.filter((a) => isAdLive(a, dateKey(now))).map((a) => a.id);
+      const activeAds = ref.current.ads.filter((a) => !isBannerAd(a) && isAdLive(a, dateKey(now))).map((a) => a.id);
       const cur: InProgress = {
         id: newId(),
         startedAt: new Date(now).toISOString(),
@@ -373,10 +374,12 @@ export function AppStoreProvider({
   const deleteVideo = useCallback(
     async (id: string) => {
       const target = ref.current.customVideos.find((v) => v.id === id);
-      if (!target) return;
-      commitVideos(ref.current.customVideos.filter((v) => v.id !== id));
-      await deleteMedia(target.video);
-      await deleteMedia(target.thumbnail);
+      const builtIn = EXERCISES.find((e) => e.id === id);
+      if (!target && !builtIn) return;
+      const rest = ref.current.customVideos.filter((v) => v.id !== id);
+      commitVideos(builtIn ? [{ ...builtIn, deleted: true }, ...rest] : rest);
+      await deleteMedia(target?.video);
+      await deleteMedia(target?.thumbnail);
     },
     [commitVideos],
   );

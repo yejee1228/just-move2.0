@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SAMPLE_ADS } from '@/data/content';
 import { clearMedia } from '@/data/media';
 import type { FarmState } from '@/lib/farm';
 import { initialFarm } from '@/lib/farm';
@@ -111,7 +112,7 @@ export const localRepository: Repository = {
       readJson<Schedule[]>(KEY.schedules, []),
       readJson<Record<string, VideoStat>>(KEY.videoStats, {}),
       readJson<Exercise[]>(KEY.customVideos, []),
-      readJson<AdVideo[]>(KEY.ads, []),
+      readJson<AdVideo[]>(KEY.ads, SAMPLE_ADS),
     ]);
     const merged = { ...defaultSettings(), ...(settings ?? {}) };
     if (!settings) await writeJson(KEY.settings, merged);

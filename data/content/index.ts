@@ -1,8 +1,9 @@
+import adsJson from './ads.json';
 import exercisesJson from './exercises.json';
 import messagesJson from './messages.json';
 import tipsJson from './tips.json';
 import { appConfig } from '@/lib/config';
-import type { Exercise } from '@/lib/types';
+import type { AdVideo, Exercise } from '@/lib/types';
 import type { WelcomeMessage } from '@/lib/messages';
 
 /**
@@ -11,6 +12,8 @@ import type { WelcomeMessage } from '@/lib/messages';
  * 베타 단계: 구글 스프레드시트 자동 반영으로 교체한다. (화면은 이 모듈만 읽는다)
  */
 export const EXERCISES = exercisesJson as Exercise[];
+/** 광고 시험용 샘플. 광고를 한 번도 저장하지 않은 브라우저에서 기본 목록으로 쓴다. 정식 서비스 전에 지운다 */
+export const SAMPLE_ADS = adsJson as AdVideo[];
 export const WELCOME_MESSAGES = messagesJson.welcome as WelcomeMessage[];
 
 export interface NotificationMessage {
@@ -39,7 +42,14 @@ export const TIP_CARDS = tipsJson as TipCard[];
 export function mergeCatalog(custom: Exercise[]): Exercise[] {
   const byId = new Map(custom.map((e) => [e.id, e]));
   const builtIn = new Set(EXERCISES.map((e) => e.id));
-  return [...EXERCISES.map((e) => byId.get(e.id) ?? e), ...custom.filter((e) => !builtIn.has(e.id))];
+  // 예전에 수정해 저장한 기본 영상에는 길이가 없을 수 있어 기본값의 길이를 이어받는다
+  return [
+    ...EXERCISES.map((e) => {
+      const edited = byId.get(e.id);
+      return edited ? { durationSec: e.durationSec, ...edited } : e;
+    }),
+    ...custom.filter((e) => !builtIn.has(e.id)),
+  ].filter((e) => !e.deleted);
 }
 
 let catalog: Exercise[] = EXERCISES;
