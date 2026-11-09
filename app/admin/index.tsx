@@ -42,15 +42,15 @@ const ORIENTATIONS = [
 ];
 
 const COLUMNS: Column[] = [
-  { label: '썸네일', width: 72 },
-  { label: '동작 이름', flex: 2.2 },
-  { label: '자세', flex: 1.2 },
-  { label: '부위', width: 80 },
-  { label: '길이', width: 70 },
-  { label: '구분', width: 96 },
-  { label: '상태', width: 76 },
-  { label: '조회', width: 60, align: 'right' },
-  { label: '좋아요', width: 60, align: 'right' },
+  { label: '썸네일', width: 64 },
+  { label: '동작 이름', flex: 2.4 },
+  { label: '자세', flex: 1 },
+  { label: '부위', width: 72 },
+  { label: '길이', width: 56 },
+  { label: '구분', width: 90 },
+  { label: '상태', width: 68 },
+  { label: '조회', width: 52, align: 'right' },
+  { label: '좋아요', width: 56, align: 'right' },
   { label: '관리', width: 150, align: 'right' },
 ];
 
@@ -226,7 +226,7 @@ export default function AdminVideosScreen() {
             {e.name}
           </Text>
           {e.description ? (
-            <Text style={[styles.desc, { color: colors.textSecondary }]} numberOfLines={1}>
+            <Text style={[styles.desc, { color: colors.textSecondary }]} numberOfLines={2}>
               {e.description}
             </Text>
           ) : null}
@@ -330,7 +330,7 @@ export default function AdminVideosScreen() {
     >
       <DoneNote message={done} />
       <SectionCard title={`영상 목록 (${catalog.length}개)`}>
-        <AdminTable columns={COLUMNS} rows={rows} minWidth={980} />
+        <AdminTable columns={COLUMNS} rows={rows} minWidth={920} />
       </SectionCard>
     </AdminShell>
   );

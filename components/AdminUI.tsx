@@ -184,7 +184,7 @@ export function AdminTable({
                     {node}
                   </Text>
                 ) : (
-                  node
+                  <View style={styles.cellContent}>{node}</View>
                 )}
               </View>
             ))}
@@ -491,6 +491,8 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '800' },
   tr: { flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: 6 },
   cell: { paddingHorizontal: 6, paddingVertical: 8, justifyContent: 'center', alignItems: 'flex-start' },
+  /** 한 줄로 고정된 글자가 칸 너비를 넘어 옆 열로 침범하지 않게 막는다 */
+  cellContent: { maxWidth: '100%' },
   cellRight: { alignItems: 'flex-end' },
   cellCenter: { alignItems: 'center' },
   th: { fontSize: 12, fontWeight: '800' },
